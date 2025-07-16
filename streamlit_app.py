@@ -15,7 +15,7 @@ financial_cols = [
     'fixedAssetTurnover', 'debtEquityRatio', 'debtRatio', 'effectiveTaxRate',
     'freeCashFlowOperatingCashFlowRatio', 'freeCashFlowPerShare', 'cashPerShare',
     'companyEquityMultiplier', 'ebitPerRevenue', 'enterpriseValueMultiple',
-    'operatingCashFlowPerShare', 'operatingCashFlowSalesRatio', 'payablesTurnover'
+    'payablesTurnover','operatingCashFlowPerShare', 'operatingCashFlowSalesRatio'
 ]
 
 sentiment_cols = ['Avg_Positive', 'Avg_Neutral', 'Avg_Negative', 'Avg_Compound']
