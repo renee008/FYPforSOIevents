@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import joblib # For loading the scalers and models
 from catboost import CatBoostClassifier
-from textblob import TextBlob # For basic sentiment analysis
+from nltk.sentiment.vader import SentimentIntensityAnalyzer # Import VADER
 
 # --- Configuration ---
 st.set_page_config(page_title="Credit Rating & Sentiment Predictor", page_icon="📈", layout="centered")
@@ -97,28 +97,41 @@ def predict_credit_rating(model, scaler, input_df, feature_columns) -> str:
 
 def analyze_sentiment(news_article: str) -> dict:
     """
-    Analyzes the sentiment of a news article and returns polarity and subjectivity.
+    Analyzes the sentiment of a news article using VADER and returns polarity and subjectivity.
+    
+    IMPORTANT: This function now uses VADER. Ensure your training data's
+    'Avg_Positive', 'Avg_Neutral', 'Avg_Negative', and 'Avg_Compound'
+    features were generated using VADER for consistency.
     """
     if not news_article:
-        return {'polarity': 0.0, 'subjectivity': 0.0, 'category': 'Neutral'}
+        return {'polarity': 0.0, 'subjectivity': 0.0, 'category': 'Neutral',
+                'pos': 0.0, 'neu': 0.0, 'neg': 0.0, 'compound': 0.0}
 
     try:
-        analysis = TextBlob(news_article)
-        polarity = analysis.sentiment.polarity
-        subjectivity = analysis.sentiment.subjectivity
+        analyzer = SentimentIntensityAnalyzer()
+        vs = analyzer.polarity_scores(news_article)
         
-        # Determine sentiment category based on polarity
-        if polarity > 0.1: # Positive threshold
+        # VADER provides 'neg', 'neu', 'pos', 'compound'
+        # Map these directly to your expected features
+        avg_positive = vs['pos']
+        avg_neutral = vs['neu']
+        avg_negative = vs['neg']
+        avg_compound = vs['compound'] # VADER's compound score is often used directly
+
+        # Determine sentiment category based on compound score
+        if avg_compound >= 0.05: # VADER's typical positive threshold
             category = "Positive"
-        elif polarity < -0.1: # Negative threshold
+        elif avg_compound <= -0.05: # VADER's typical negative threshold
             category = "Negative"
         else:
             category = "Neutral"
             
-        return {'polarity': polarity, 'subjectivity': subjectivity, 'category': category}
+        return {'polarity': avg_compound, 'subjectivity': 0.0, 'category': category,
+                'pos': avg_positive, 'neu': avg_neutral, 'neg': avg_negative, 'compound': avg_compound}
     except Exception as e:
         st.error(f"Error during sentiment analysis: {e}")
-        return {'polarity': 0.0, 'subjectivity': 0.0, 'category': 'Error'}
+        return {'polarity': 0.0, 'subjectivity': 0.0, 'category': 'Error',
+                'pos': 0.0, 'neu': 0.0, 'neg': 0.0, 'compound': 0.0}
 
 # --- Streamlit UI ---
 
@@ -222,32 +235,30 @@ st.header("2. Predict Credit Rating (Model B - Financial + Sentiment)")
 st.caption("This model combines financial metrics with news article sentiment.")
 
 news_article = st.text_area("Enter Company News Article Here",
-                            "Example: The company announced record profits this quarter, exceeding all expectations and leading to a significant stock price increase. However, concerns about market competition are rising.",
+                            "Example: The company announced record loss this quarter, exceeding all expectations and leading to a significant stock price decrease. However, concerns about market competition are rising.",
                             height=200)
 
 if st.button("Analyze Sentiment & Predict with Model B"):
     sentiment_result = analyze_sentiment(news_article)
     
     st.subheader("News Article Sentiment:")
+    # Display VADER's specific scores for clarity
+    st.info(f"VADER Scores: Positive: {sentiment_result['pos']:.2f}, Neutral: {sentiment_result['neu']:.2f}, Negative: {sentiment_result['neg']:.2f}, Compound: {sentiment_result['compound']:.2f}")
+
     if sentiment_result['category'] == "Positive":
-        st.success(f"Sentiment: **{sentiment_result['category']}** 😊 (Polarity: {sentiment_result['polarity']:.2f}, Subjectivity: {sentiment_result['subjectivity']:.2f})")
+        st.success(f"Sentiment Category: **{sentiment_result['category']}** 😊")
     elif sentiment_result['category'] == "Negative":
-        st.error(f"Sentiment: **{sentiment_result['category']}** 😠 (Polarity: {sentiment_result['polarity']:.2f}, Subjectivity: {sentiment_result['subjectivity']:.2f})")
+        st.error(f"Sentiment Category: **{sentiment_result['category']}** 😠")
     else:
-        st.info(f"Sentiment: **{sentiment_result['category']}** 😐 (Polarity: {sentiment_result['polarity']:.2f}, Subjectivity: {sentiment_result['subjectivity']:.2f})")
+        st.info(f"Sentiment Category: **{sentiment_result['category']}** 😐")
 
     # Prepare data for Model B prediction
     if 'B' in models and 'all' in scalers:
-        # The sentiment features (Avg_Positive, Avg_Neutral, Avg_Negative, Avg_Compound)
-        # need to be derived from the TextBlob polarity and subjectivity
-        # Ensure this logic matches how these features were created in your training data
-        
-        # Simple mapping for demonstration. Adjust if your training data's sentiment features
-        # were derived differently (e.g., from a more complex NLP model).
-        avg_positive = 1 if sentiment_result['polarity'] > 0.1 else 0
-        avg_neutral = 1 if -0.1 <= sentiment_result['polarity'] <= 0.1 else 0
-        avg_negative = 1 if sentiment_result['polarity'] < -0.1 else 0
-        avg_compound = sentiment_result['polarity'] # Using TextBlob polarity as compound
+        # Use VADER's scores directly as your sentiment features
+        avg_positive = sentiment_result['pos']
+        avg_neutral = sentiment_result['neu']
+        avg_negative = sentiment_result['neg']
+        avg_compound = sentiment_result['compound']
 
         # Combine all inputs into a single dictionary
         all_inputs = {**financial_inputs,
@@ -268,5 +279,3 @@ if st.button("Analyze Sentiment & Predict with Model B"):
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant. Remember to train and save your models and scalers!")
-
-
