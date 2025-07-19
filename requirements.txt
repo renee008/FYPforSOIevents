@@ -4,3 +4,4 @@ catboost
 scikit-learn
 joblib
 nltk
+shap
