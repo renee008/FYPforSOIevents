@@ -129,7 +129,8 @@ def predict_credit_rating(model, scaler, input_df, feature_columns) -> tuple:
         input_df_reindexed = input_df[feature_columns]
         scaled_data = scaler.transform(input_df_reindexed)
         
-        predicted_rating = model.predict(scaled_data)[0]
+        # Use .item() to extract the scalar string value from the numpy array
+        predicted_rating = model.predict(scaled_data).item()
         probabilities = model.predict_proba(scaled_data)[0]
         
         # Map probabilities to class names
@@ -207,32 +208,35 @@ def get_feature_contributions(model, scaler, input_df, feature_columns, top_n=5)
         explainer = shap.TreeExplainer(model)
         shap_values = explainer.shap_values(scaled_data)
 
-        # Get the predicted class label
-        predicted_class_label = model.predict(scaled_data)[0]
-        
-        # Find the integer index of the predicted class within the model's classes
-        try:
-            predicted_class_index = list(model.classes_).index(predicted_class_label)
-        except ValueError:
-            st.warning(f"Predicted class '{predicted_class_label}' not found in model.classes_ for SHAP explanation.")
-            return []
-
-        # Determine the correct SHAP values array to use based on model output structure
         shap_values_for_prediction = None
 
-        if isinstance(shap_values, list) and len(shap_values) == len(model.classes_):
-            # Standard multi-class output from SHAP: list of arrays, one for each class
-            if predicted_class_index < len(shap_values):
-                shap_values_for_prediction = shap_values[predicted_class_index][0] # [0] for the single instance
-        elif isinstance(shap_values, np.ndarray) and shap_values.ndim == 2 and shap_values.shape[0] == 1:
-            # This case happens if SHAP returns a single array (e.g., for binary classification)
-            shap_values_for_prediction = shap_values[0]
-        elif isinstance(shap_values, list) and len(shap_values) == 1 and isinstance(shap_values[0], np.ndarray):
-            # This case is a list containing a single numpy array (e.g., for binary or simplified multi-class)
-            shap_values_for_prediction = shap_values[0][0] # Access the single array, then the single instance
+        # Get the predicted class label (e.g., 'B', 'AAA')
+        predicted_class_label = model.predict(scaled_data).item()
         
+        if isinstance(shap_values, list) and len(shap_values) > 1:
+            # This is the standard multi-class output from TreeExplainer: list of arrays, one for each class
+            # Find the integer index of the predicted class within the model's classes
+            try:
+                predicted_class_index = list(model.classes_).index(predicted_class_label)
+            except ValueError:
+                st.warning(f"Predicted class '{predicted_class_label}' not found in model.classes_ for SHAP explanation.")
+                return []
+            
+            if predicted_class_index < len(shap_values):
+                # Access the SHAP values for the specific predicted class and the single instance
+                shap_values_for_prediction = shap_values[predicted_class_index][0] 
+            else:
+                st.warning(f"Predicted class index {predicted_class_index} out of bounds for SHAP values list (len: {len(shap_values)}).")
+                return []
+        elif isinstance(shap_values, np.ndarray) and shap_values.ndim >= 1 and shap_values.shape[0] == 1:
+            # This handles binary classification or cases where SHAP returns a single array for the output
+            # For a single instance, it should be shap_values[0]
+            shap_values_for_prediction = shap_values[0]
+        else:
+            st.warning("Unexpected SHAP values type or structure. Expected list of arrays or numpy array.")
+            return []
+
         if shap_values_for_prediction is None:
-            st.warning("Unexpected SHAP values structure. Cannot determine feature contributions.")
             return []
 
         # Create a Series for easier handling
@@ -422,6 +426,7 @@ if st.button("Predict with Model A", key="predict_A_button"):
             st.subheader("Prediction Probabilities:")
             # Sort probabilities before formatting
             prob_df_A = pd.DataFrame(probabilities_A.items(), columns=['Rating', 'Probability'])
+            prob_df_A['Probability'] = prob_df_A['Probability'].astype(float) # Ensure numeric sort
             prob_df_A = prob_df_A.sort_values(by='Probability', ascending=False)
             prob_df_A['Probability'] = prob_df_A['Probability'].apply(lambda x: f"{x:.2%}") # Format as percentage
             st.dataframe(prob_df_A, hide_index=True, use_container_width=True)
@@ -494,6 +499,7 @@ if st.button("Analyze Sentiment & Predict with Model B", key="predict_B_button")
             st.subheader("Prediction Probabilities:")
             # Sort probabilities before formatting
             prob_df_B = pd.DataFrame(probabilities_B.items(), columns=['Rating', 'Probability'])
+            prob_df_B['Probability'] = prob_df_B['Probability'].astype(float) # Ensure numeric sort
             prob_df_B = prob_df_B.sort_values(by='Probability', ascending=False)
             prob_df_B['Probability'] = prob_df_B['Probability'].apply(lambda x: f"{x:.2%}") # Format as percentage
             st.dataframe(prob_df_B, hide_index=True, use_container_width=True)
@@ -514,4 +520,5 @@ if st.button("Analyze Sentiment & Predict with Model B", key="predict_B_button")
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant.")
+
 
