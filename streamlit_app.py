@@ -6,6 +6,7 @@ from nltk.sentiment.vader import SentimentIntensityAnalyzer # Import VADER
 import nltk # Import nltk
 import shap # For explainability
 import numpy as np # Import numpy for array handling
+import matplotlib.pyplot as plt # For plotting feature contributions
 
 # --- Custom CSS for Styling ---
 st.markdown(
@@ -209,14 +210,12 @@ def get_feature_contributions(model, scaler, input_df, feature_columns, top_n=5)
         scaled_data = scaler.transform(input_df_reindexed)
         
         # Convert scaled_data back to a DataFrame with column names for SHAP
-        # This is often more robust for SHAP explainers, especially with CatBoost
         scaled_data_df = pd.DataFrame(scaled_data, columns=feature_columns_list)
         
         explainer = shap.TreeExplainer(model)
         shap_values = explainer.shap_values(scaled_data_df) # Pass the DataFrame here
 
         # Get the predicted class label (e.g., 'B', 'AAA')
-        # Use .item() to ensure it's a scalar string
         predicted_class_label = model.predict(scaled_data).item()
         
         shap_values_for_prediction = None
@@ -228,31 +227,27 @@ def get_feature_contributions(model, scaler, input_df, feature_columns, top_n=5)
             st.warning(f"Predicted class '{predicted_class_label}' not found in model.classes_ for SHAP explanation.")
             return []
 
+        # Handle different SHAP output structures for multi-class CatBoost
         if isinstance(shap_values, list) and len(shap_values) == len(model.classes_):
-            # Standard multi-class output from TreeExplainer: list of arrays, one for each class
+            # This is the standard multi-class output: list of arrays, one for each class
             # Each array is (num_instances, num_features). We need the first instance.
             if predicted_class_index < len(shap_values):
                 shap_values_for_prediction = shap_values[predicted_class_index][0] 
             else:
                 st.warning(f"Predicted class index {predicted_class_index} out of bounds for SHAP values list (len: {len(shap_values)}).")
                 return []
-        elif isinstance(shap_values, np.ndarray):
-            # This handles the (1, N_FEATURES, N_CLASSES) structure or (1, N_FEATURES)
-            if shap_values.ndim == 3 and shap_values.shape[0] == 1 and shap_values.shape[2] == len(model.classes_):
-                # This matches the (1, N_FEATURES, N_CLASSES) shape
-                # Extract SHAP values for the single instance (0) and the specific predicted class
-                shap_values_for_prediction = shap_values[0, :, predicted_class_index]
-            elif shap_values.ndim == 2 and shap_values.shape[0] == 1:
-                # Binary classification or simplified multi-class (1, N_FEATURES)
-                shap_values_for_prediction = shap_values[0]
-            elif shap_values.ndim == 1:
-                # Already 1D array (N_FEATURES)
-                shap_values_for_prediction = shap_values
-            else:
-                st.warning(f"Unexpected SHAP numpy array structure. ndim: {shap_values.ndim}, shape: {shap_values.shape}")
-                return []
+        elif isinstance(shap_values, np.ndarray) and shap_values.ndim == 3:
+            # This handles the (1, N_FEATURES, N_CLASSES) structure
+            # Extract SHAP values for the single instance (0) and the specific predicted class
+            shap_values_for_prediction = shap_values[0, :, predicted_class_index]
+        elif isinstance(shap_values, np.ndarray) and shap_values.ndim == 2 and shap_values.shape[0] == 1:
+            # Binary classification or simplified multi-class (1, N_FEATURES)
+            shap_values_for_prediction = shap_values[0]
+        elif isinstance(shap_values, np.ndarray) and shap_values.ndim == 1:
+            # Already 1D array (N_FEATURES)
+            shap_values_for_prediction = shap_values
         else:
-            st.warning("Unexpected SHAP values type or structure. Expected list of arrays or numpy array.")
+            st.warning(f"Unexpected SHAP numpy array structure. ndim: {getattr(shap_values, 'ndim', 'N/A')}, shape: {getattr(shap_values, 'shape', 'N/A')}. Expected list of arrays or specific numpy array shapes.")
             return []
 
         if shap_values_for_prediction is None:
@@ -280,6 +275,40 @@ def get_feature_contributions(model, scaler, input_df, feature_columns, top_n=5)
     except Exception as e:
         st.error(f"Error calculating feature contributions: {e}")
         return []
+
+# --- Plotting Function for SHAP Contributions ---
+def plot_shap_contributions_chart(contributions, title):
+    """
+    Plots a horizontal bar chart of SHAP feature contributions.
+    """
+    if not contributions:
+        return None # No plot to generate
+
+    features = [c[0] for c in contributions]
+    impacts = [c[1] for c in contributions]
+    colors = ['#2ca02c' if c[2] == 'higher' else '#d62728' for c in contributions] # Green for higher, Red for lower
+
+    # Sort by absolute impact for consistent display (already sorted by get_feature_contributions, but re-confirm for plot)
+    # This re-sorts just in case, ensuring plot order matches text order
+    sorted_indices = np.argsort(np.abs(impacts))[::-1]
+    features_sorted = [features[i] for i in sorted_indices]
+    impacts_sorted = [impacts[i] for i in sorted_indices]
+    colors_sorted = [colors[i] for i in sorted_indices]
+
+    # Adjust figure size dynamically based on number of features
+    fig, ax = plt.subplots(figsize=(10, max(4, len(features_sorted) * 0.6 + 1))) 
+    y_pos = np.arange(len(features_sorted))
+
+    ax.barh(y_pos, impacts_sorted, color=colors_sorted)
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(features_sorted)
+    ax.invert_yaxis() # Features with highest impact at the top
+    ax.set_xlabel("SHAP Value (Impact on Prediction)")
+    ax.set_title(title)
+    ax.axvline(0, color='grey', linewidth=0.8, linestyle='--') # Add a vertical line at 0 for reference
+    plt.tight_layout()
+    return fig
+
 
 # --- Default Values and Ranges for Inputs ---
 default_values = {
@@ -353,8 +382,7 @@ with tab_about:
 
     This application uses two machine learning models:
     * **Model A (Financial Only):** Predicts credit ratings based solely on a set of key financial metrics.
-    * **Model B (Financial + Sentiment):
-    ** Combines these financial metrics with sentiment analysis derived from news articles to provide a more holistic prediction.
+    * **Model B (Financial + Sentiment):** Combines these financial metrics with sentiment analysis derived from news articles to provide a more holistic prediction.
     """)
 
 with tab_how_to_use:
@@ -362,6 +390,7 @@ with tab_how_to_use:
     ### How to Use This Website
     1.  **Enter Company Name:** Provide the name of the company you are analyzing in the text input field below.
     2.  **Input Financial Metrics:** Fill in the values for the various financial ratios in the designated section. Please ensure you enter percentage-like metrics (e.g., margins, returns) as decimals (e.g., enter `0.10` for 10%).
+        * **Note on Numerical Inputs:** The number input fields provide small up and down arrows (▲/▼) that you can click to increment or decrement the values.
     3.  **Predict with Model A:** Click the "Predict with Model A" button to get a credit rating prediction based only on the financial data you've entered.
     4.  **Enter News Article (for Model B):** Provide a relevant news article about the company in the text area under "2. Predict Credit Rating (Model B - Financial + Sentiment)".
     5.  **Analyze Sentiment & Predict with Model B:** Click this button to first analyze the sentiment of the news article you provided, and then get a credit rating prediction that incorporates both financial and sentiment data.
@@ -465,6 +494,14 @@ if st.button("Predict with Model A", key="predict_A_button"):
                         st.markdown(f"- **{feature}**: Pushed rating **higher** (Impact: {value:.4f})")
                     else:
                         st.markdown(f"- **{feature}**: Pushed rating **lower** (Impact: {value:.4f})")
+                
+                # Plot the contributions
+                fig_A = plot_shap_contributions_chart(contributions_A, f"Top Feature Contributions for {st.session_state.company_name} (Model A)")
+                if fig_A:
+                    st.pyplot(fig_A)
+                    plt.close(fig_A) # Close the figure to prevent memory issues
+                else:
+                    st.info("No sufficient data to plot feature contributions for Model A.")
             else:
                 st.info("Could not determine feature contributions for Model A.")
 
@@ -538,6 +575,14 @@ if st.button("Analyze Sentiment & Predict with Model B", key="predict_B_button")
                         st.markdown(f"- **{feature}**: Pushed rating **higher** (Impact: {value:.4f})")
                     else:
                         st.markdown(f"- **{feature}**: Pushed rating **lower** (Impact: {value:.4f})")
+                
+                # Plot the contributions
+                fig_B = plot_shap_contributions_chart(contributions_B, f"Top Feature Contributions for {st.session_state.company_name} (Model B)")
+                if fig_B:
+                    st.pyplot(fig_B)
+                    plt.close(fig_B) # Close the figure to prevent memory issues
+                else:
+                    st.info("No sufficient data to plot feature contributions for Model B.")
             else:
                 st.info("Could not determine feature contributions for Model B.")
     else:
@@ -545,5 +590,3 @@ if st.button("Analyze Sentiment & Predict with Model B", key="predict_B_button")
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant.")
-
-
