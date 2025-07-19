@@ -221,27 +221,32 @@ def get_feature_contributions(model, scaler, input_df, feature_columns, top_n=5)
         
         shap_values_for_prediction = None
 
+        # Determine the integer index of the predicted class
+        try:
+            predicted_class_index = list(model.classes_).index(predicted_class_label)
+        except ValueError:
+            st.warning(f"Predicted class '{predicted_class_label}' not found in model.classes_ for SHAP explanation.")
+            return []
+
         if isinstance(shap_values, list) and len(shap_values) == len(model.classes_):
             # Standard multi-class output from TreeExplainer: list of arrays, one for each class
-            try:
-                predicted_class_index = list(model.classes_).index(predicted_class_label)
-            except ValueError:
-                st.warning(f"Predicted class '{predicted_class_label}' not found in model.classes_ for SHAP explanation.")
-                return []
-            
+            # Each array is (num_instances, num_features). We need the first instance.
             if predicted_class_index < len(shap_values):
-                # Access the SHAP values for the specific predicted class and the single instance
-                # shap_values[predicted_class_index] will be (1, N_FEATURES), so take [0] to get 1D array
                 shap_values_for_prediction = shap_values[predicted_class_index][0] 
             else:
                 st.warning(f"Predicted class index {predicted_class_index} out of bounds for SHAP values list (len: {len(shap_values)}).")
                 return []
         elif isinstance(shap_values, np.ndarray):
-            # This case handles binary classification or simplified multi-class where SHAP returns a single array
-            # If it's 2D (1, N_FEATURES), take the first row. If 1D, use directly.
-            if shap_values.ndim == 2 and shap_values.shape[0] == 1:
+            # This handles the (1, N_FEATURES, N_CLASSES) structure or (1, N_FEATURES)
+            if shap_values.ndim == 3 and shap_values.shape[0] == 1 and shap_values.shape[2] == len(model.classes_):
+                # This matches the (1, N_FEATURES, N_CLASSES) shape
+                # Extract SHAP values for the single instance (0) and the specific predicted class
+                shap_values_for_prediction = shap_values[0, :, predicted_class_index]
+            elif shap_values.ndim == 2 and shap_values.shape[0] == 1:
+                # Binary classification or simplified multi-class (1, N_FEATURES)
                 shap_values_for_prediction = shap_values[0]
-            elif shap_values.ndim == 1: 
+            elif shap_values.ndim == 1:
+                # Already 1D array (N_FEATURES)
                 shap_values_for_prediction = shap_values
             else:
                 st.warning(f"Unexpected SHAP numpy array structure. ndim: {shap_values.ndim}, shape: {shap_values.shape}")
@@ -348,7 +353,8 @@ with tab_about:
 
     This application uses two machine learning models:
     * **Model A (Financial Only):** Predicts credit ratings based solely on a set of key financial metrics.
-    * **Model B (Financial + Sentiment):** Combines these financial metrics with sentiment analysis derived from news articles to provide a more holistic prediction.
+    * **Model B (Financial + Sentiment):
+    ** Combines these financial metrics with sentiment analysis derived from news articles to provide a more holistic prediction.
     """)
 
 with tab_how_to_use:
