@@ -42,6 +42,16 @@ st.markdown(
     .st-emotion-cache-1r6dm1x { /* Target expander/popover */
         border-radius: 12px;
     }
+
+    /* --- CSS to hide number input arrows --- */
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+    }
+    input[type=number] {
+        -moz-appearance: textfield; /* Firefox */
+    }
     </style>
     """,
     unsafe_allow_html=True
@@ -351,18 +361,29 @@ step_values = {
 }
 
 
-# --- Initialize Session State for Reset Button ---
+# --- Initialize Session State for Reset Button and Prediction Triggers ---
 if 'financial_inputs' not in st.session_state:
     st.session_state.financial_inputs = {col: default_values.get(col, 0.0) for col in financial_cols}
 if 'news_article' not in st.session_state:
     st.session_state.news_article = "Example: The company announced record loss this quarter, exceeding all expectations and leading to a significant stock price decrease. However, concerns about market competition are rising."
 if 'company_name' not in st.session_state:
     st.session_state.company_name = "Example Corp"
+if 'predict_A_triggered' not in st.session_state:
+    st.session_state.predict_A_triggered = False
+if 'predict_B_triggered' not in st.session_state:
+    st.session_state.predict_B_triggered = False
 
 def reset_inputs():
     st.session_state.financial_inputs = {col: default_values.get(col, 0.0) for col in financial_cols}
     st.session_state.news_article = "Example: The company announced record loss this quarter, exceeding all expectations and leading to a significant stock price decrease. However, concerns about market competition are rising."
     st.session_state.company_name = "Example Corp"
+    st.session_state.predict_A_triggered = False
+    st.session_state.predict_B_triggered = False
+
+def run_all_predictions():
+    st.session_state.predict_A_triggered = True
+    st.session_state.predict_B_triggered = True
+
 
 # --- Main UI Layout ---
 st.title("Company Financial Health & News Sentiment Analyzer")
@@ -390,11 +411,10 @@ with tab_how_to_use:
     ### How to Use This Website
     1.  **Enter Company Name:** Provide the name of the company you are analyzing in the text input field below.
     2.  **Input Financial Metrics:** Fill in the values for the various financial ratios in the designated section. Please ensure you enter percentage-like metrics (e.g., margins, returns) as decimals (e.g., enter `0.10` for 10%).
-        * **Note on Numerical Inputs:** The number input fields provide small up and down arrows (▲/▼) that you can click to increment or decrement the values.
-    3.  **Predict with Model A:** Click the "Predict with Model A" button to get a credit rating prediction based only on the financial data you've entered.
-    4.  **Enter News Article (for Model B):** Provide a relevant news article about the company in the text area under "2. Predict Credit Rating (Model B - Financial + Sentiment)".
-    5.  **Analyze Sentiment & Predict with Model B:** Click this button to first analyze the sentiment of the news article you provided, and then get a credit rating prediction that incorporates both financial and sentiment data.
-    6.  **Reset Inputs:** Use the "Reset All Inputs" button to clear the form and start fresh.
+        * **Note on Numerical Inputs:** The number input fields require manual typing of values. The increment/decrement arrows are hidden for a cleaner interface.
+    3.  **Predict with Models:** You can either click "Predict with Model A" or "Analyze Sentiment & Predict with Model B" for individual predictions, or click "Predict All Models" to run both at once.
+    4.  **Review Results:** The prediction results, probabilities, and key feature contributions will appear in the "Prediction Results" section.
+    5.  **Reset Inputs:** Use the "Reset All Inputs" button to clear the form and start fresh.
     """)
 
 st.markdown("---") # Separator below the tabs
@@ -438,14 +458,14 @@ for i, col_name in enumerate(financial_cols):
         'operatingCashFlowSalesRatio': 'Operating cash flow / sales. Measures cash generated from each dollar of sales.',
         'payablesTurnover': 'How many times a company pays off its accounts payable during a period.'
     }
-    st.info(metric_help_text.get(col_name, "No specific help text available."), icon="💡")
+    st.info(metric_help_text.get(col_name, "No specific help text available."), icon="�")
 
     st.session_state.financial_inputs[col_name] = st.number_input(
         f"Value for {col_name}",
         min_value=min_values.get(col_name, 0.0),
         max_value=max_values.get(col_name, 1000.0),
         value=st.session_state.financial_inputs.get(col_name, default_values.get(col_name, 0.0)),
-        step=step_values.get(col_name, 0.01),
+        step=step_values.get(col_name, 0.01), # Still need step for internal logic/validation even if arrows are hidden
         key=f"fin_input_{col_name}" # Unique key for each input
     )
 
@@ -454,39 +474,54 @@ financial_df_row = pd.DataFrame([st.session_state.financial_inputs])
 
 st.markdown("---")
 
-# --- Reset Button ---
+# --- Prediction Buttons ---
+col_predict_A, col_predict_B, col_predict_all = st.columns(3)
+
+with col_predict_A:
+    if st.button("Predict with Model A", key="trigger_predict_A"):
+        st.session_state.predict_A_triggered = True
+        st.session_state.predict_B_triggered = False # Reset other trigger
+with col_predict_B:
+    if st.button("Analyze Sentiment & Predict with Model B", key="trigger_predict_B"):
+        st.session_state.predict_B_triggered = True
+        st.session_state.predict_A_triggered = False # Reset other trigger
+with col_predict_all:
+    if st.button("Predict All Models", key="trigger_predict_all", on_click=run_all_predictions):
+        pass # The on_click function handles state updates
+
 st.button("Reset All Inputs", on_click=reset_inputs)
 
 st.markdown("---")
 
-# --- Model A Prediction Section (Financial Only) ---
-st.header("1. Predict Credit Rating (Model A - Financial Only)")
-st.caption("This model uses only the financial metrics entered above.")
+# --- Prediction Results Section ---
+st.header("Prediction Results")
 
-if st.button("Predict with Model A", key="predict_A_button"):
+# Model A Prediction Display
+if st.session_state.predict_A_triggered:
+    st.subheader("1. Model A (Financial Only) Prediction")
     if 'A' in models and 'fin' in scalers:
         with st.spinner("Predicting with Model A..."):
             predicted_rating_A, probabilities_A = predict_credit_rating(models['A'], scalers['fin'], financial_df_row, financial_cols)
             
-            st.subheader(f"Predicted Credit Rating (Model A) for {st.session_state.company_name}:")
-            col_rating_A, col_popover_A = st.columns([0.7, 0.3])
-            with col_rating_A:
+            st.write(f"**Predicted Credit Rating for {st.session_state.company_name}:**")
+            col_rating_A_display, col_popover_A_display = st.columns([0.7, 0.3])
+            with col_rating_A_display:
                 st.success(f"**{predicted_rating_A}**")
-            with col_popover_A:
+            with col_popover_A_display:
                 with st.popover(f"What is '{predicted_rating_A}'?"):
                     st.write(f"**{predicted_rating_A}:** {CREDIT_RATING_DEFINITIONS.get(predicted_rating_A, 'Definition not available for this rating.')}")
 
             st.write("---")
             st.subheader("Prediction Probabilities:")
-            # Sort probabilities before formatting
             prob_df_A = pd.DataFrame(probabilities_A.items(), columns=['Rating', 'Probability'])
-            prob_df_A['Probability'] = prob_df_A['Probability'].astype(float) # Ensure numeric sort
+            prob_df_A['Probability'] = prob_df_A['Probability'].astype(float)
             prob_df_A = prob_df_A.sort_values(by='Probability', ascending=False)
-            prob_df_A['Probability'] = prob_df_A['Probability'].apply(lambda x: f"{x:.2%}") # Format as percentage
+            prob_df_A['Probability'] = prob_df_A['Probability'].apply(lambda x: f"{x:.2%}")
             st.dataframe(prob_df_A, hide_index=True, use_container_width=True)
 
             st.write("---")
             st.subheader("Key Feature Contributions (Model A):")
+            st.markdown("*(Green bars push the rating higher, red bars push it lower)*")
             contributions_A = get_feature_contributions(models['A'], scalers['fin'], financial_df_row, financial_cols)
             if contributions_A:
                 for feature, value, direction in contributions_A:
@@ -495,48 +530,40 @@ if st.button("Predict with Model A", key="predict_A_button"):
                     else:
                         st.markdown(f"- **{feature}**: Pushed rating **lower** (Impact: {value:.4f})")
                 
-                # Plot the contributions
                 fig_A = plot_shap_contributions_chart(contributions_A, f"Top Feature Contributions for {st.session_state.company_name} (Model A)")
                 if fig_A:
                     st.pyplot(fig_A)
-                    plt.close(fig_A) # Close the figure to prevent memory issues
+                    plt.close(fig_A)
                 else:
                     st.info("No sufficient data to plot feature contributions for Model A.")
             else:
                 st.info("Could not determine feature contributions for Model A.")
-
     else:
         st.warning("Model A or its scaler not loaded. Cannot perform prediction.")
+    st.markdown("---")
 
-st.markdown("---")
 
-# --- Model B Prediction Section (Financial + Sentiment) ---
-st.header("2. Predict Credit Rating (Model B - Financial + Sentiment)")
-st.caption("This model combines financial metrics with news article sentiment.")
-
-st.session_state.news_article = st.text_area("Enter Company News Article Here",
-                            value=st.session_state.news_article,
-                            height=200, key="news_article_input")
-
-if st.button("Analyze Sentiment & Predict with Model B", key="predict_B_button"):
-    sentiment_result = analyze_sentiment(st.session_state.news_article)
+# Model B Prediction Display
+if st.session_state.predict_B_triggered:
+    st.subheader("2. Model B (Financial + Sentiment) Prediction")
+    news_article_for_B = st.session_state.news_article # Use the current news article from session state
+    sentiment_result_B = analyze_sentiment(news_article_for_B)
     
-    st.subheader("News Article Sentiment:")
-    st.info(f"VADER Compound Score: {sentiment_result['Avg_Compound']:.2f} (Positive: {sentiment_result['Avg_Positive']:.2f}, Neutral: {sentiment_result['Avg_Neutral']:.2f}, Negative: {sentiment_result['Avg_Negative']:.2f})")
+    st.write("News Article Sentiment:")
+    st.info(f"VADER Compound Score: {sentiment_result_B['Avg_Compound']:.2f} (Positive: {sentiment_result_B['Avg_Positive']:.2f}, Neutral: {sentiment_result_B['Avg_Neutral']:.2f}, Negative: {sentiment_result_B['Avg_Negative']:.2f})")
 
-    if sentiment_result['category'] == "Positive":
-        st.success(f"Sentiment Category: **{sentiment_result['category']}** 😊")
-    elif sentiment_result['category'] == "Negative":
-        st.error(f"Sentiment Category: **{sentiment_result['category']}** 😠")
+    if sentiment_result_B['category'] == "Positive":
+        st.success(f"Sentiment Category: **{sentiment_result_B['category']}** 😊")
+    elif sentiment_result_B['category'] == "Negative":
+        st.error(f"Sentiment Category: **{sentiment_result_B['category']}** 😠")
     else:
-        st.info(f"Sentiment Category: **{sentiment_result['category']}** 😐")
+        st.info(f"Sentiment Category: **{sentiment_result_B['category']}** 😐")
 
-    # Prepare data for Model B prediction
     if 'B' in models and 'all' in scalers:
-        avg_positive = sentiment_result['Avg_Positive']
-        avg_neutral = sentiment_result['Avg_Neutral']
-        avg_negative = sentiment_result['Avg_Negative']
-        avg_compound = sentiment_result['Avg_Compound']
+        avg_positive = sentiment_result_B['Avg_Positive']
+        avg_neutral = sentiment_result_B['Avg_Neutral']
+        avg_negative = sentiment_result_B['Avg_Negative']
+        avg_compound = sentiment_result_B['Avg_Compound']
 
         all_inputs = {**st.session_state.financial_inputs,
                       'Avg_Positive': avg_positive,
@@ -549,25 +576,25 @@ if st.button("Analyze Sentiment & Predict with Model B", key="predict_B_button")
         with st.spinner("Predicting with Model B..."):
             predicted_rating_B, probabilities_B = predict_credit_rating(models['B'], scalers['all'], combined_df_row, all_cols)
             
-            st.subheader(f"Predicted Credit Rating (Model B) for {st.session_state.company_name}:")
-            col_rating_B, col_popover_B = st.columns([0.7, 0.3])
-            with col_rating_B:
+            st.write(f"**Predicted Credit Rating for {st.session_state.company_name}:**")
+            col_rating_B_display, col_popover_B_display = st.columns([0.7, 0.3])
+            with col_rating_B_display:
                 st.success(f"**{predicted_rating_B}**")
-            with col_popover_B:
+            with col_popover_B_display:
                 with st.popover(f"What is '{predicted_rating_B}'?"):
                     st.write(f"**{predicted_rating_B}:** {CREDIT_RATING_DEFINITIONS.get(predicted_rating_B, 'Definition not available for this rating.')}")
 
             st.write("---")
             st.subheader("Prediction Probabilities:")
-            # Sort probabilities before formatting
             prob_df_B = pd.DataFrame(probabilities_B.items(), columns=['Rating', 'Probability'])
-            prob_df_B['Probability'] = prob_df_B['Probability'].astype(float) # Ensure numeric sort
+            prob_df_B['Probability'] = prob_df_B['Probability'].astype(float)
             prob_df_B = prob_df_B.sort_values(by='Probability', ascending=False)
-            prob_df_B['Probability'] = prob_df_B['Probability'].apply(lambda x: f"{x:.2%}") # Format as percentage
+            prob_df_B['Probability'] = prob_df_B['Probability'].apply(lambda x: f"{x:.2%}")
             st.dataframe(prob_df_B, hide_index=True, use_container_width=True)
 
             st.write("---")
             st.subheader("Key Feature Contributions (Model B):")
+            st.markdown("*(Green bars push the rating higher, red bars push it lower)*")
             contributions_B = get_feature_contributions(models['B'], scalers['all'], combined_df_row, all_cols)
             if contributions_B:
                 for feature, value, direction in contributions_B:
@@ -576,11 +603,10 @@ if st.button("Analyze Sentiment & Predict with Model B", key="predict_B_button")
                     else:
                         st.markdown(f"- **{feature}**: Pushed rating **lower** (Impact: {value:.4f})")
                 
-                # Plot the contributions
                 fig_B = plot_shap_contributions_chart(contributions_B, f"Top Feature Contributions for {st.session_state.company_name} (Model B)")
                 if fig_B:
                     st.pyplot(fig_B)
-                    plt.close(fig_B) # Close the figure to prevent memory issues
+                    plt.close(fig_B)
                 else:
                     st.info("No sufficient data to plot feature contributions for Model B.")
             else:
