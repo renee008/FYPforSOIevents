@@ -184,7 +184,7 @@ step_values = {
 for col in financial_cols:
     st.write(f"**{col}**")
     # Add a note for percentage-like metrics
-    if 'Margin' in col or 'ReturnOn' in col or 'TaxRate' in col or 'Ratio' in col and col not in ['currentRatio', 'quickRatio', 'cashRatio', 'debtEquityRatio', 'debtRatio', 'freeCashFlowOperatingCashFlowRatio', 'operatingCashFlowSalesRatio']:
+    if 'Margin' in col or 'ReturnOn' in col or 'TaxRate' in col or ('Ratio' in col and col not in ['currentRatio', 'quickRatio', 'cashRatio', 'debtEquityRatio', 'debtRatio', 'freeCashFlowOperatingCashFlowRatio', 'operatingCashFlowSalesRatio']):
         st.caption("Enter as decimal (e.g., 0.1 for 10%)")
     
     financial_inputs[col] = st.number_input(
@@ -249,18 +249,15 @@ if st.button("Analyze Sentiment & Predict with Model B"):
         avg_negative = 1 if sentiment_result['polarity'] < -0.1 else 0
         avg_compound = sentiment_result['polarity'] # Using TextBlob polarity as compound
 
-        sentiment_data = {
-            'Avg_Positive': [avg_positive],
-            'Avg_Neutral': [avg_neutral],
-            'Avg_Negative': [avg_negative],
-            'Avg_Compound': [avg_compound]
-        }
-        # Create a DataFrame for sentiment features
-        sentiment_df_row = pd.DataFrame([sentiment_data])
-
-        # Combine financial and sentiment data
-        # Ensure column order matches 'all_cols'
-        combined_df_row = pd.concat([financial_df_row, sentiment_df_row], axis=1)
+        # Combine all inputs into a single dictionary
+        all_inputs = {**financial_inputs,
+                      'Avg_Positive': avg_positive,
+                      'Avg_Neutral': avg_neutral,
+                      'Avg_Negative': avg_negative,
+                      'Avg_Compound': avg_compound}
+        
+        # Create a DataFrame from the combined dictionary, ensuring correct order
+        combined_df_row = pd.DataFrame([all_inputs])[all_cols] # Explicitly select and order columns
         
         with st.spinner("Predicting with Model B..."):
             predicted_rating_B = predict_credit_rating(models['B'], scalers['all'], combined_df_row, all_cols)
@@ -271,6 +268,5 @@ if st.button("Analyze Sentiment & Predict with Model B"):
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant. Remember to train and save your models and scalers!")
-
 
 
