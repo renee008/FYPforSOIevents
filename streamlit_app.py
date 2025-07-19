@@ -458,7 +458,8 @@ for i, col_name in enumerate(financial_cols):
         'operatingCashFlowSalesRatio': 'Operating cash flow / sales. Measures cash generated from each dollar of sales.',
         'payablesTurnover': 'How many times a company pays off its accounts payable during a period.'
     }
-    st.info(metric_help_text.get(col_name, "No specific help text available."), icon="�")
+    # Removed the 'icon' parameter from st.info to fix the error
+    st.info(metric_help_text.get(col_name, "No specific help text available."))
 
     st.session_state.financial_inputs[col_name] = st.number_input(
         f"Value for {col_name}",
@@ -616,3 +617,4 @@ if st.session_state.predict_B_triggered:
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant.")
+
