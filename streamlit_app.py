@@ -5,6 +5,7 @@ from catboost import CatBoostClassifier
 from nltk.sentiment.vader import SentimentIntensityAnalyzer # Import VADER
 import nltk # Import nltk
 import shap # For explainability
+import numpy as np # Import numpy for array handling
 
 # --- Custom CSS for Styling ---
 st.markdown(
@@ -66,7 +67,7 @@ financial_cols = [
     'returnOnAssets', 'returnOnEquity', 'assetTurnover',
     'fixedAssetTurnover', 'debtRatio', 'effectiveTaxRate',
     'freeCashFlowOperatingCashFlowRatio', 'freeCashFlowPerShare', 'cashPerShare',
-    'enterpriseValueMultiple', 'payablesTurnover','operatingCashFlowPerShare', 'operatingCashFlowSalesRatio'
+    'enterpriseValueMultiple', 'operatingCashFlowPerShare', 'operatingCashFlowSalesRatio', 'payablesTurnover'
 ]
 
 sentiment_cols = ['Avg_Positive', 'Avg_Neutral', 'Avg_Negative', 'Avg_Compound']
@@ -197,35 +198,45 @@ CREDIT_RATING_DEFINITIONS = {
 def get_feature_contributions(model, scaler, input_df, feature_columns, top_n=5):
     """
     Calculates SHAP values and returns the top N most influential features
-    and their impact (positive/negative).
+    and their impact (positive/negative) for the predicted class.
     """
     try:
-        # Ensure input_df has the correct columns in the correct order
         input_df_reindexed = input_df[feature_columns]
         scaled_data = scaler.transform(input_df_reindexed)
         
         explainer = shap.TreeExplainer(model)
         shap_values = explainer.shap_values(scaled_data)
 
-        # shap_values can be a list of arrays for multi-class.
-        # For multi-class, shap_values[class_idx] gives explanation for that class.
-        # We'll explain the predicted class.
+        # Get the predicted class label
+        predicted_class_label = model.predict(scaled_data)[0]
         
-        # Get the index of the predicted class
-        predicted_class_idx = model.predict(scaled_data)[0]
-        # Find the index of the predicted class in the model's classes_ array
+        # Find the integer index of the predicted class within the model's classes
         try:
-            class_idx = list(model.classes_).index(predicted_class_idx)
+            predicted_class_index = list(model.classes_).index(predicted_class_label)
         except ValueError:
-            # Handle cases where predicted_class_idx might not be in model.classes_ (shouldn't happen with CatBoost)
-            st.warning("Could not find predicted class in model's class list for SHAP explanation.")
+            st.warning(f"Predicted class '{predicted_class_label}' not found in model.classes_ for SHAP explanation.")
             return []
 
-        # Use the SHAP values for the predicted class
-        shap_values_for_predicted_class = shap_values[class_idx][0] # [0] because we have one instance
+        # Determine the correct SHAP values array to use based on model output structure
+        shap_values_for_prediction = None
+
+        if isinstance(shap_values, list) and len(shap_values) == len(model.classes_):
+            # Standard multi-class output from SHAP: list of arrays, one for each class
+            if predicted_class_index < len(shap_values):
+                shap_values_for_prediction = shap_values[predicted_class_index][0] # [0] for the single instance
+        elif isinstance(shap_values, np.ndarray) and shap_values.ndim == 2 and shap_values.shape[0] == 1:
+            # This case happens if SHAP returns a single array (e.g., for binary classification)
+            shap_values_for_prediction = shap_values[0]
+        elif isinstance(shap_values, list) and len(shap_values) == 1 and isinstance(shap_values[0], np.ndarray):
+            # This case is a list containing a single numpy array (e.g., for binary or simplified multi-class)
+            shap_values_for_prediction = shap_values[0][0] # Access the single array, then the single instance
+        
+        if shap_values_for_prediction is None:
+            st.warning("Unexpected SHAP values structure. Cannot determine feature contributions.")
+            return []
 
         # Create a Series for easier handling
-        feature_impact = pd.Series(shap_values_for_predicted_class, index=feature_columns)
+        feature_impact = pd.Series(shap_values_for_prediction, index=feature_columns)
         
         # Sort by absolute value to find the most impactful features
         sorted_impact = feature_impact.abs().sort_values(ascending=False)
@@ -233,7 +244,7 @@ def get_feature_contributions(model, scaler, input_df, feature_columns, top_n=5)
         contributions = []
         for feature_name in sorted_impact.index[:top_n]:
             impact_value = feature_impact[feature_name]
-            direction = "positive" if impact_value > 0 else "negative"
+            direction = "higher" if impact_value > 0 else "lower" # Changed to higher/lower for clarity
             contributions.append((feature_name, impact_value, direction))
             
         return contributions
@@ -339,50 +350,46 @@ st.markdown("---")
 # --- Input Fields for Financial Metrics ---
 st.header("Enter Financial Metrics")
 
-# Use columns for better layout of inputs
-num_cols_per_row = 2
-cols = st.columns(num_cols_per_row)
-
+# Display inputs in a single column
 for i, col_name in enumerate(financial_cols):
-    with cols[i % num_cols_per_row]:
-        st.write(f"**{col_name}**")
-        # Add a note for percentage-like metrics
-        if 'Margin' in col_name or 'ReturnOn' in col_name or 'TaxRate' in col_name or 'Ratio' in col_name:
-            st.caption("Enter as decimal (e.g., 0.1 for 10%)")
-        
-        # Add a tooltip/help text for each metric
-        metric_help_text = {
-            'currentRatio': 'Measures short-term liquidity: current assets / current liabilities.',
-            'quickRatio': 'Measures short-term liquidity excluding inventory: (current assets - inventory) / current liabilities.',
-            'cashRatio': 'Most conservative liquidity measure: cash / current liabilities.',
-            'daysOfSalesOutstanding': 'Average number of days to collect accounts receivable.',
-            'netProfitMargin': 'Percentage of revenue left after all expenses, including taxes.',
-            'pretaxProfitMargin': 'Percentage of revenue left before taxes.',
-            'grossProfitMargin': 'Percentage of revenue left after deducting cost of goods sold.',
-            'returnOnAssets': 'How efficiently a company uses its assets to generate earnings.',
-            'returnOnEquity': 'How much profit a company generates for each dollar of shareholders\' equity.',
-            'assetTurnover': 'How efficiently a company uses its assets to generate sales.',
-            'fixedAssetTurnover': 'How efficiently a company uses its fixed assets to generate sales.',
-            'debtRatio': 'Total debt / total assets. Measures leverage.',
-            'effectiveTaxRate': 'The actual rate of tax paid by a company on its earnings.',
-            'freeCashFlowOperatingCashFlowRatio': 'Free cash flow / operating cash flow. Measures cash available after capital expenditures.',
-            'freeCashFlowPerShare': 'Free cash flow available per share.',
-            'cashPerShare': 'Cash and cash equivalents per outstanding share.',
-            'enterpriseValueMultiple': 'Enterprise Value / EBITDA. Valuation multiple.',
-            'operatingCashFlowPerShare': 'Cash generated from operations per share.',
-            'operatingCashFlowSalesRatio': 'Operating cash flow / sales. Measures cash generated from each dollar of sales.',
-            'payablesTurnover': 'How many times a company pays off its accounts payable during a period.'
-        }
-        st.info(metric_help_text.get(col_name, "No specific help text available."), icon="💡")
+    st.write(f"**{col_name}**")
+    # Add a note for percentage-like metrics
+    if 'Margin' in col_name or 'ReturnOn' in col_name or 'TaxRate' in col_name or ('Ratio' in col_name and col_name not in ['currentRatio', 'quickRatio', 'cashRatio', 'debtRatio', 'freeCashFlowOperatingCashFlowRatio', 'operatingCashFlowSalesRatio']):
+        st.caption("Enter as decimal (e.g., 0.1 for 10%)")
+    
+    # Add a tooltip/help text for each metric
+    metric_help_text = {
+        'currentRatio': 'Measures short-term liquidity: current assets / current liabilities.',
+        'quickRatio': 'Measures short-term liquidity excluding inventory: (current assets - inventory) / current liabilities.',
+        'cashRatio': 'Most conservative liquidity measure: cash / current liabilities.',
+        'daysOfSalesOutstanding': 'Average number of days to collect accounts receivable.',
+        'netProfitMargin': 'Percentage of revenue left after all expenses, including taxes.',
+        'pretaxProfitMargin': 'Percentage of revenue left before taxes.',
+        'grossProfitMargin': 'Percentage of revenue left after deducting cost of goods sold.',
+        'returnOnAssets': 'How efficiently a company uses its assets to generate earnings.',
+        'returnOnEquity': 'How much profit a company generates for each dollar of shareholders\' equity.',
+        'assetTurnover': 'How efficiently a company uses its assets to generate sales.',
+        'fixedAssetTurnover': 'How efficiently a company uses its fixed assets to generate sales.',
+        'debtRatio': 'Total debt / total assets. Measures leverage.',
+        'effectiveTaxRate': 'The actual rate of tax paid by a company on its earnings.',
+        'freeCashFlowOperatingCashFlowRatio': 'Free cash flow / operating cash flow. Measures cash available after capital expenditures.',
+        'freeCashFlowPerShare': 'Free cash flow available per share.',
+        'cashPerShare': 'Cash and cash equivalents per outstanding share.',
+        'enterpriseValueMultiple': 'Enterprise Value / EBITDA. Valuation multiple.',
+        'operatingCashFlowPerShare': 'Cash generated from operations per share.',
+        'operatingCashFlowSalesRatio': 'Operating cash flow / sales. Measures cash generated from each dollar of sales.',
+        'payablesTurnover': 'How many times a company pays off its accounts payable during a period.'
+    }
+    st.info(metric_help_text.get(col_name, "No specific help text available."), icon="💡")
 
-        st.session_state.financial_inputs[col_name] = st.number_input(
-            f"Value for {col_name}",
-            min_value=min_values.get(col_name, 0.0),
-            max_value=max_values.get(col_name, 1000.0),
-            value=st.session_state.financial_inputs.get(col_name, default_values.get(col_name, 0.0)),
-            step=step_values.get(col_name, 0.01),
-            key=f"fin_input_{col_name}" # Unique key for each input
-        )
+    st.session_state.financial_inputs[col_name] = st.number_input(
+        f"Value for {col_name}",
+        min_value=min_values.get(col_name, 0.0),
+        max_value=max_values.get(col_name, 1000.0),
+        value=st.session_state.financial_inputs.get(col_name, default_values.get(col_name, 0.0)),
+        step=step_values.get(col_name, 0.01),
+        key=f"fin_input_{col_name}" # Unique key for each input
+    )
 
 # Convert financial inputs to a DataFrame row
 financial_df_row = pd.DataFrame([st.session_state.financial_inputs])
@@ -409,20 +416,22 @@ if st.button("Predict with Model A", key="predict_A_button"):
                 st.success(f"**{predicted_rating_A}**")
             with col_popover_A:
                 with st.popover(f"What is '{predicted_rating_A}'?"):
-                    st.write(f"**{predicted_rating_A}:** {CREDIT_RATING_DEFINITIONS.get(predicted_rating_A, 'Definition not available.')}")
+                    st.write(f"**{predicted_rating_A}:** {CREDIT_RATING_DEFINITIONS.get(predicted_rating_A, 'Definition not available for this rating.')}")
 
             st.write("---")
             st.subheader("Prediction Probabilities:")
+            # Sort probabilities before formatting
             prob_df_A = pd.DataFrame(probabilities_A.items(), columns=['Rating', 'Probability'])
+            prob_df_A = prob_df_A.sort_values(by='Probability', ascending=False)
             prob_df_A['Probability'] = prob_df_A['Probability'].apply(lambda x: f"{x:.2%}") # Format as percentage
-            st.dataframe(prob_df_A.sort_values(by='Probability', ascending=False), hide_index=True, use_container_width=True)
+            st.dataframe(prob_df_A, hide_index=True, use_container_width=True)
 
             st.write("---")
             st.subheader("Key Feature Contributions (Model A):")
             contributions_A = get_feature_contributions(models['A'], scalers['fin'], financial_df_row, financial_cols)
             if contributions_A:
                 for feature, value, direction in contributions_A:
-                    if direction == "positive":
+                    if direction == "higher":
                         st.markdown(f"- **{feature}**: Pushed rating **higher** (Impact: {value:.4f})")
                     else:
                         st.markdown(f"- **{feature}**: Pushed rating **lower** (Impact: {value:.4f})")
@@ -449,7 +458,7 @@ if st.button("Analyze Sentiment & Predict with Model B", key="predict_B_button")
     st.info(f"VADER Compound Score: {sentiment_result['Avg_Compound']:.2f} (Positive: {sentiment_result['Avg_Positive']:.2f}, Neutral: {sentiment_result['Avg_Neutral']:.2f}, Negative: {sentiment_result['Avg_Negative']:.2f})")
 
     if sentiment_result['category'] == "Positive":
-        st.success(f"Sentiment Category: **{sentiment_result['category']}** �")
+        st.success(f"Sentiment Category: **{sentiment_result['category']}** 😊")
     elif sentiment_result['category'] == "Negative":
         st.error(f"Sentiment Category: **{sentiment_result['category']}** 😠")
     else:
@@ -479,20 +488,22 @@ if st.button("Analyze Sentiment & Predict with Model B", key="predict_B_button")
                 st.success(f"**{predicted_rating_B}**")
             with col_popover_B:
                 with st.popover(f"What is '{predicted_rating_B}'?"):
-                    st.write(f"**{predicted_rating_B}:** {CREDIT_RATING_DEFINITIONS.get(predicted_rating_B, 'Definition not available.')}")
+                    st.write(f"**{predicted_rating_B}:** {CREDIT_RATING_DEFINITIONS.get(predicted_rating_B, 'Definition not available for this rating.')}")
 
             st.write("---")
             st.subheader("Prediction Probabilities:")
+            # Sort probabilities before formatting
             prob_df_B = pd.DataFrame(probabilities_B.items(), columns=['Rating', 'Probability'])
+            prob_df_B = prob_df_B.sort_values(by='Probability', ascending=False)
             prob_df_B['Probability'] = prob_df_B['Probability'].apply(lambda x: f"{x:.2%}") # Format as percentage
-            st.dataframe(prob_df_B.sort_values(by='Probability', ascending=False), hide_index=True, use_container_width=True)
+            st.dataframe(prob_df_B, hide_index=True, use_container_width=True)
 
             st.write("---")
             st.subheader("Key Feature Contributions (Model B):")
             contributions_B = get_feature_contributions(models['B'], scalers['all'], combined_df_row, all_cols)
             if contributions_B:
                 for feature, value, direction in contributions_B:
-                    if direction == "positive":
+                    if direction == "higher":
                         st.markdown(f"- **{feature}**: Pushed rating **higher** (Impact: {value:.4f})")
                     else:
                         st.markdown(f"- **{feature}**: Pushed rating **lower** (Impact: {value:.4f})")
@@ -503,3 +514,4 @@ if st.button("Analyze Sentiment & Predict with Model B", key="predict_B_button")
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant.")
+
