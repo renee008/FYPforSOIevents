@@ -11,9 +11,8 @@ def download_nltk_vader():
     try:
         nltk.data.find('sentiment/vader_lexicon.zip')
     except LookupError: # Catch LookupError for missing data
-        st.info("Downloading VADER lexicon for sentiment analysis. This will only happen once.")
+        # No st.info/st.success messages here, as requested
         nltk.download('vader_lexicon')
-        st.success("VADER lexicon downloaded!")
 
 download_nltk_vader()
 
@@ -47,7 +46,7 @@ def load_models_and_scalers():
         model_A = CatBoostClassifier()
         model_A.load_model('CatboostML.modelA.cbm')
         models['A'] = model_A
-        st.success("Model A (Financial Only) loaded successfully!")
+        # st.success("Model A (Financial Only) loaded successfully!") # Removed
     except Exception as e:
         st.error(f"Error loading Model A: {e}")
         st.warning("Please ensure 'CatboostML.modelA.cbm' is in the same directory and trained with the correct features.")
@@ -55,7 +54,7 @@ def load_models_and_scalers():
     try:
         scaler_fin = joblib.load('scaler_fin.pkl')
         scalers['fin'] = scaler_fin
-        st.success("Scaler for Model A loaded successfully!")
+        # st.success("Scaler for Model A loaded successfully!") # Removed
     except Exception as e:
         st.error(f"Error loading scaler_fin.pkl: {e}")
         st.warning("Please ensure 'scaler_fin.pkl' is in the same directory and trained with the correct features.")
@@ -65,7 +64,7 @@ def load_models_and_scalers():
         model_B = CatBoostClassifier()
         model_B.load_model('CatboostML.modelB.cbm')
         models['B'] = model_B
-        st.success("Model B (Financial + Sentiment) loaded successfully!")
+        # st.success("Model B (Financial + Sentiment) loaded successfully!") # Removed
     except Exception as e:
         st.error(f"Error loading Model B: {e}")
         st.warning("Please ensure 'CatboostML.modelB.cbm' is in the same directory and trained with the correct features.")
@@ -73,7 +72,7 @@ def load_models_and_scalers():
     try:
         scaler_all = joblib.load('scaler_all.pkl')
         scalers['all'] = scaler_all
-        st.success("Scaler for Model B loaded successfully!")
+        # st.success("Scaler for Model B loaded successfully!") # Removed
     except Exception as e:
         st.error(f"Error loading scaler_all.pkl: {e}")
         st.warning("Please ensure 'scaler_all.pkl' is in the same directory and trained with the correct features.")
@@ -153,8 +152,10 @@ def analyze_sentiment(news_article: str) -> dict:
 
 st.title("Company Financial Health & News Sentiment Analyzer")
 
-# --- About Credit Ratings Section (using expander for a cleaner look) ---
-with st.expander("About Credit Ratings & This Website"):
+# --- Navigation Bar (using st.tabs) ---
+tab1, tab2 = st.tabs(["About Credit Ratings", "How to Use This Website"])
+
+with tab1:
     st.markdown("""
     ### What is a Credit Rating?
     A credit rating is an independent assessment of a company's financial strength and its ability to meet its financial obligations. These ratings are crucial for investors, lenders, and businesses as they provide a quick snapshot of creditworthiness, influencing borrowing costs and investment decisions. Ratings typically range from 'AAA' (highest quality, lowest risk) to 'D' (default).
@@ -167,16 +168,19 @@ with st.expander("About Credit Ratings & This Website"):
     This application uses two machine learning models:
     * **Model A (Financial Only):** Predicts credit ratings based solely on a set of key financial metrics.
     * **Model B (Financial + Sentiment):** Combines these financial metrics with sentiment analysis derived from news articles to provide a more holistic prediction.
-
-    ### How to Use This Website
-    1.  **Enter Company Name:** Provide the name of the company you are analyzing.
-    2.  **Input Financial Metrics:** Fill in the values for the various financial ratios in the designated section. Ensure you enter percentage-like metrics (e.g., margins, returns) as decimals (e.g., 0.10 for 10%).
-    3.  **Predict with Model A:** Click the "Predict with Model A" button to get a credit rating prediction based only on the financial data.
-    4.  **Enter News Article (for Model B):** Provide a relevant news article about the company in the text area for Model B.
-    5.  **Analyze Sentiment & Predict with Model B:** Click this button to first analyze the sentiment of the news article and then get a credit rating prediction that incorporates both financial and sentiment data.
     """)
 
-st.markdown("---")
+with tab2:
+    st.markdown("""
+    ### How to Use This Website
+    1.  **Enter Company Name:** Provide the name of the company you are analyzing in the text input field.
+    2.  **Input Financial Metrics:** Fill in the values for the various financial ratios in the designated section below. Please ensure you enter percentage-like metrics (e.g., margins, returns) as decimals (e.g., enter `0.10` for 10%).
+    3.  **Predict with Model A:** Click the "Predict with Model A" button to get a credit rating prediction based only on the financial data you've entered.
+    4.  **Enter News Article (for Model B):** Provide a relevant news article about the company in the text area under "2. Predict Credit Rating (Model B - Financial + Sentiment)".
+    5.  **Analyze Sentiment & Predict with Model B:** Click this button to first analyze the sentiment of the news article you provided, and then get a credit rating prediction that incorporates both financial and sentiment data.
+    """)
+
+st.markdown("---") # Separator below the tabs
 
 # --- Input Fields for Financial Metrics (Common to both models) ---
 st.header("Enter Financial Metrics")
@@ -187,9 +191,6 @@ company_name = st.text_input("Company Name", "Example Corp")
 financial_inputs = {}
 
 # Define sensible default values and ranges for each financial metric
-# These are crucial for user experience and preventing invalid inputs
-# Values are based on general financial health indicators.
-# Updated default_values, min_values, max_values, step_values to match new financial_cols
 default_values = {
     'currentRatio': 1.8, 'quickRatio': 1.0, 'cashRatio': 0.25, 'daysOfSalesOutstanding': 35.0,
     'netProfitMargin': 0.10, 'pretaxProfitMargin': 0.12, 'grossProfitMargin': 0.30,
@@ -314,7 +315,7 @@ if st.button("Analyze Sentiment & Predict with Model B"):
         st.warning("Model B or its scaler not loaded. Cannot perform prediction.")
 
 st.markdown("---")
-st.info("Developed with Streamlit by your AI assistant. Remember to train and save your models and scalers!")
+st.info("Developed with Streamlit by your AI assistant.")
 
 
 
