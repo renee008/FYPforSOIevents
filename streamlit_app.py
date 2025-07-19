@@ -4,6 +4,46 @@ import joblib # For loading the scalers and models
 from catboost import CatBoostClassifier
 from nltk.sentiment.vader import SentimentIntensityAnalyzer # Import VADER
 import nltk # Import nltk
+import shap # For explainability
+
+# --- Custom CSS for Styling ---
+st.markdown(
+    """
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
+    }
+    .stButton>button {
+        border-radius: 12px;
+        padding: 10px 20px;
+        font-weight: 600;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+        transition: all 0.2s ease-in-out;
+    }
+    .stButton>button:hover {
+        transform: translateY(-2px);
+        box-shadow: 4px 4px 10px rgba(0,0,0,0.3);
+    }
+    .stTextInput>div>div>input, .stTextArea>div>div>textarea {
+        border-radius: 8px;
+        padding: 8px 12px;
+    }
+    .st-emotion-cache-nahz7x { /* Target Streamlit tabs container */
+        border-radius: 12px;
+        overflow: hidden;
+        margin-bottom: 20px;
+    }
+    .st-emotion-cache-10q7065 { /* Target individual tabs */
+        border-radius: 12px 12px 0 0;
+    }
+    .st-emotion-cache-1r6dm1x { /* Target expander/popover */
+        border-radius: 12px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 # --- NLTK Data Download (Crucial for VADER) ---
 @st.cache_resource # Cache the download to run only once
@@ -11,7 +51,6 @@ def download_nltk_vader():
     try:
         nltk.data.find('sentiment/vader_lexicon.zip')
     except LookupError: # Catch LookupError for missing data
-        # No st.info/st.success messages here, as requested
         nltk.download('vader_lexicon')
 
 download_nltk_vader()
@@ -34,8 +73,6 @@ sentiment_cols = ['Avg_Positive', 'Avg_Neutral', 'Avg_Negative', 'Avg_Compound']
 all_cols = financial_cols + sentiment_cols
 
 # --- Model and Scaler Loading ---
-# IMPORTANT: Ensure these files are in the same directory as this script on GitHub.
-
 @st.cache_resource # Cache the models and scalers to avoid reloading on every rerun
 def load_models_and_scalers():
     models = {}
@@ -46,7 +83,6 @@ def load_models_and_scalers():
         model_A = CatBoostClassifier()
         model_A.load_model('CatboostML.modelA.cbm')
         models['A'] = model_A
-        # st.success("Model A (Financial Only) loaded successfully!") # Removed
     except Exception as e:
         st.error(f"Error loading Model A: {e}")
         st.warning("Please ensure 'CatboostML.modelA.cbm' is in the same directory and trained with the correct features.")
@@ -54,7 +90,6 @@ def load_models_and_scalers():
     try:
         scaler_fin = joblib.load('scaler_fin.pkl')
         scalers['fin'] = scaler_fin
-        # st.success("Scaler for Model A loaded successfully!") # Removed
     except Exception as e:
         st.error(f"Error loading scaler_fin.pkl: {e}")
         st.warning("Please ensure 'scaler_fin.pkl' is in the same directory and trained with the correct features.")
@@ -64,7 +99,6 @@ def load_models_and_scalers():
         model_B = CatBoostClassifier()
         model_B.load_model('CatboostML.modelB.cbm')
         models['B'] = model_B
-        # st.success("Model B (Financial + Sentiment) loaded successfully!") # Removed
     except Exception as e:
         st.error(f"Error loading Model B: {e}")
         st.warning("Please ensure 'CatboostML.modelB.cbm' is in the same directory and trained with the correct features.")
@@ -72,7 +106,6 @@ def load_models_and_scalers():
     try:
         scaler_all = joblib.load('scaler_all.pkl')
         scalers['all'] = scaler_all
-        # st.success("Scaler for Model B loaded successfully!") # Removed
     except Exception as e:
         st.error(f"Error loading scaler_all.pkl: {e}")
         st.warning("Please ensure 'scaler_all.pkl' is in the same directory and trained with the correct features.")
@@ -83,35 +116,35 @@ models, scalers = load_models_and_scalers()
 
 # --- Prediction Functions ---
 
-def predict_credit_rating(model, scaler, input_df, feature_columns) -> str:
+def predict_credit_rating(model, scaler, input_df, feature_columns) -> tuple:
     """
-    Predicts the credit rating using the given model and scaler.
+    Predicts the credit rating and its probabilities using the given model and scaler.
+    Returns (predicted_rating, probabilities_dict).
     """
     if model is None or scaler is None:
-        return "Model or scaler not loaded. Cannot predict credit rating."
+        return "Model or scaler not loaded. Cannot predict credit rating.", {}
 
     try:
-        # Ensure input_df has the correct columns in the correct order
-        # Reindex to ensure consistency with training features
         input_df_reindexed = input_df[feature_columns]
-        
-        # Scale the input features
         scaled_data = scaler.transform(input_df_reindexed)
         
-        # Make prediction
         predicted_rating = model.predict(scaled_data)[0]
+        probabilities = model.predict_proba(scaled_data)[0]
         
-        return str(predicted_rating)
+        # Map probabilities to class names
+        class_names = model.classes_
+        probabilities_dict = dict(zip(class_names, probabilities))
+        
+        return str(predicted_rating), probabilities_dict
 
     except Exception as e:
         st.error(f"Error during credit rating prediction: {e}")
-        return "Prediction failed."
+        return "Prediction failed.", {}
 
 def analyze_sentiment(news_article: str) -> dict:
     """
     Analyzes the sentiment of a news article using VADER and returns the
-    Avg_Positive, Avg_Neutral, Avg_Negative, and Avg_Compound scores
-    as expected by your model.
+    Avg_Positive, Avg_Neutral, Avg_Negative, and Avg_Compound scores.
     """
     if not news_article:
         return {'polarity': 0.0, 'subjectivity': 0.0, 'category': 'Neutral',
@@ -123,7 +156,6 @@ def analyze_sentiment(news_article: str) -> dict:
         
         compound_score = vs['compound']
 
-        # Determine sentiment category based on compound score
         if compound_score >= 0.05:
             category = "Positive"
         elif compound_score <= -0.05:
@@ -131,7 +163,6 @@ def analyze_sentiment(news_article: str) -> dict:
         else:
             category = "Neutral"
             
-        # Generate Avg_Positive, Avg_Neutral, Avg_Negative as binary flags
         avg_positive_flag = 1.0 if compound_score >= 0.05 else 0.0
         avg_neutral_flag = 1.0 if -0.05 < compound_score < 0.05 else 0.0
         avg_negative_flag = 1.0 if compound_score <= -0.05 else 0.0
@@ -148,49 +179,70 @@ def analyze_sentiment(news_article: str) -> dict:
         return {'polarity': 0.0, 'subjectivity': 0.0, 'category': 'Error',
                 'Avg_Positive': 0.0, 'Avg_Neutral': 0.0, 'Avg_Negative': 0.0, 'Avg_Compound': 0.0}
 
-# --- Streamlit UI ---
+# --- Credit Rating Definitions ---
+CREDIT_RATING_DEFINITIONS = {
+    'AAA': "Highest quality, lowest risk. Extremely strong capacity to meet financial commitments.",
+    'AA': "Very high quality, very low risk. Very strong capacity to meet financial commitments.",
+    'A': "High quality, low risk. Strong capacity to meet financial commitments, but somewhat more susceptible to adverse economic conditions.",
+    'BBB': "Good quality, moderate risk. Adequate capacity to meet financial commitments, but more susceptible to adverse economic conditions than higher-rated categories.",
+    'BB': "Speculative, significant risk. Less vulnerable in the near term but faces major uncertainties and exposure to adverse business, financial, or economic conditions.",
+    'B': "Highly speculative, high risk. Significant credit risk, with a limited margin of safety.",
+    'CCC': "Substantial credit risk. Currently vulnerable, and dependent upon favorable business, financial, and economic conditions to meet financial commitments.",
+    'CC': "Very high credit risk. Highly vulnerable, with default a strong possibility.",
+    'C': "Extremely high credit risk. Default is imminent or has occurred, with little prospect for recovery.",
+    'D': "Default. The company has defaulted on its financial obligations."
+}
 
-st.title("Company Financial Health & News Sentiment Analyzer")
+# --- SHAP Explainability Function ---
+def get_feature_contributions(model, scaler, input_df, feature_columns, top_n=5):
+    """
+    Calculates SHAP values and returns the top N most influential features
+    and their impact (positive/negative).
+    """
+    try:
+        # Ensure input_df has the correct columns in the correct order
+        input_df_reindexed = input_df[feature_columns]
+        scaled_data = scaler.transform(input_df_reindexed)
+        
+        explainer = shap.TreeExplainer(model)
+        shap_values = explainer.shap_values(scaled_data)
 
-# --- Navigation Bar (using st.tabs) ---
-tab1, tab2 = st.tabs(["About Credit Ratings", "How to Use This Website"])
+        # shap_values can be a list of arrays for multi-class.
+        # For multi-class, shap_values[class_idx] gives explanation for that class.
+        # We'll explain the predicted class.
+        
+        # Get the index of the predicted class
+        predicted_class_idx = model.predict(scaled_data)[0]
+        # Find the index of the predicted class in the model's classes_ array
+        try:
+            class_idx = list(model.classes_).index(predicted_class_idx)
+        except ValueError:
+            # Handle cases where predicted_class_idx might not be in model.classes_ (shouldn't happen with CatBoost)
+            st.warning("Could not find predicted class in model's class list for SHAP explanation.")
+            return []
 
-with tab1:
-    st.markdown("""
-    ### What is a Credit Rating?
-    A credit rating is an independent assessment of a company's financial strength and its ability to meet its financial obligations. These ratings are crucial for investors, lenders, and businesses as they provide a quick snapshot of creditworthiness, influencing borrowing costs and investment decisions. Ratings typically range from 'AAA' (highest quality, lowest risk) to 'D' (default).
+        # Use the SHAP values for the predicted class
+        shap_values_for_predicted_class = shap_values[class_idx][0] # [0] because we have one instance
 
-    ### How are Credit Ratings Calculated?
-    Credit rating agencies use a comprehensive approach, combining quantitative financial analysis with qualitative factors.
-    * **Financial Metrics (Quantitative):** This includes analyzing a company's balance sheet, income statement, and cash flow statement. Key ratios like liquidity (e.g., current ratio), profitability (e.g., gross profit margin), leverage (e.g., debt ratio), and efficiency (e.g., days of sales outstanding) are vital.
-    * **News Sentiment (Qualitative):** Public sentiment and news coverage can significantly impact a company's perceived risk. Positive news might signal stability and growth, while negative news could indicate potential challenges.
+        # Create a Series for easier handling
+        feature_impact = pd.Series(shap_values_for_predicted_class, index=feature_columns)
+        
+        # Sort by absolute value to find the most impactful features
+        sorted_impact = feature_impact.abs().sort_values(ascending=False)
+        
+        contributions = []
+        for feature_name in sorted_impact.index[:top_n]:
+            impact_value = feature_impact[feature_name]
+            direction = "positive" if impact_value > 0 else "negative"
+            contributions.append((feature_name, impact_value, direction))
+            
+        return contributions
 
-    This application uses two machine learning models:
-    * **Model A (Financial Only):** Predicts credit ratings based solely on a set of key financial metrics.
-    * **Model B (Financial + Sentiment):** Combines these financial metrics with sentiment analysis derived from news articles to provide a more holistic prediction.
-    """)
+    except Exception as e:
+        st.error(f"Error calculating feature contributions: {e}")
+        return []
 
-with tab2:
-    st.markdown("""
-    ### How to Use This Website
-    1.  **Enter Company Name:** Provide the name of the company you are analyzing in the text input field.
-    2.  **Input Financial Metrics:** Fill in the values for the various financial ratios in the designated section below. Please ensure you enter percentage-like metrics (e.g., margins, returns) as decimals (e.g., enter `0.10` for 10%).
-    3.  **Predict with Model A:** Click the "Predict with Model A" button to get a credit rating prediction based only on the financial data you've entered.
-    4.  **Enter News Article (for Model B):** Provide a relevant news article about the company in the text area under "2. Predict Credit Rating (Model B - Financial + Sentiment)".
-    5.  **Analyze Sentiment & Predict with Model B:** Click this button to first analyze the sentiment of the news article you provided, and then get a credit rating prediction that incorporates both financial and sentiment data.
-    """)
-
-st.markdown("---") # Separator below the tabs
-
-# --- Input Fields for Financial Metrics (Common to both models) ---
-st.header("Enter Financial Metrics")
-
-company_name = st.text_input("Company Name", "Example Corp")
-
-# Create a dictionary to hold all financial inputs
-financial_inputs = {}
-
-# Define sensible default values and ranges for each financial metric
+# --- Default Values and Ranges for Inputs ---
 default_values = {
     'currentRatio': 1.8, 'quickRatio': 1.0, 'cashRatio': 0.25, 'daysOfSalesOutstanding': 35.0,
     'netProfitMargin': 0.10, 'pretaxProfitMargin': 0.12, 'grossProfitMargin': 0.30,
@@ -231,24 +283,114 @@ step_values = {
 }
 
 
-for col in financial_cols:
-    st.write(f"**{col}**")
-    # Add a note for percentage-like metrics
-    if 'Margin' in col or 'ReturnOn' in col or 'TaxRate' in col or ('Ratio' in col and col not in ['currentRatio', 'quickRatio', 'cashRatio', 'debtEquityRatio', 'debtRatio', 'freeCashFlowOperatingCashFlowRatio', 'operatingCashFlowSalesRatio']):
-        st.caption("Enter as decimal (e.g., 0.1 for 10%)")
-    
-    financial_inputs[col] = st.number_input(
-        f"Enter value for {col}",
-        min_value=min_values.get(col, 0.0), # Use .get() with a fallback for safety
-        max_value=max_values.get(col, 1000.0),
-        value=default_values.get(col, 0.0),
-        step=step_values.get(col, 0.01),
-        key=f"fin_{col}"
-    )
+# --- Initialize Session State for Reset Button ---
+if 'financial_inputs' not in st.session_state:
+    st.session_state.financial_inputs = {col: default_values.get(col, 0.0) for col in financial_cols}
+if 'news_article' not in st.session_state:
+    st.session_state.news_article = "Example: The company announced record loss this quarter, exceeding all expectations and leading to a significant stock price decrease. However, concerns about market competition are rising."
+if 'company_name' not in st.session_state:
+    st.session_state.company_name = "Example Corp"
+
+def reset_inputs():
+    st.session_state.financial_inputs = {col: default_values.get(col, 0.0) for col in financial_cols}
+    st.session_state.news_article = "Example: The company announced record loss this quarter, exceeding all expectations and leading to a significant stock price decrease. However, concerns about market competition are rising."
+    st.session_state.company_name = "Example Corp"
+
+# --- Main UI Layout ---
+st.title("Company Financial Health & News Sentiment Analyzer")
+
+# Navigation Bar (using st.tabs)
+tab_about, tab_how_to_use = st.tabs(["About Credit Ratings", "How to Use This Website"])
+
+with tab_about:
+    st.markdown("""
+    ### What is a Credit Rating?
+    A credit rating is an independent assessment of a company's financial strength and its ability to meet its financial obligations. These ratings are crucial for investors, lenders, and businesses as they provide a quick snapshot of creditworthiness, influencing borrowing costs and investment decisions. Ratings typically range from 'AAA' (highest quality, lowest risk) to 'D' (default).
+
+    ### How are Credit Ratings Calculated?
+    Credit rating agencies use a comprehensive approach, combining quantitative financial analysis with qualitative factors.
+    * **Financial Metrics (Quantitative):** This involves analyzing a company's balance sheet, income statement, and cash flow statement. Key ratios like liquidity (e.g., current ratio), profitability (e.g., gross profit margin), leverage (e.g., debt ratio), and efficiency (e.g., days of sales outstanding) are vital.
+    * **News Sentiment (Qualitative):** Public sentiment and news coverage can significantly impact a company's perceived risk. Positive news might signal stability and growth, while negative news could indicate potential challenges.
+
+    This application uses two machine learning models:
+    * **Model A (Financial Only):** Predicts credit ratings based solely on a set of key financial metrics.
+    * **Model B (Financial + Sentiment):** Combines these financial metrics with sentiment analysis derived from news articles to provide a more holistic prediction.
+    """)
+
+with tab_how_to_use:
+    st.markdown("""
+    ### How to Use This Website
+    1.  **Enter Company Name:** Provide the name of the company you are analyzing in the text input field below.
+    2.  **Input Financial Metrics:** Fill in the values for the various financial ratios in the designated section. Please ensure you enter percentage-like metrics (e.g., margins, returns) as decimals (e.g., enter `0.10` for 10%).
+    3.  **Predict with Model A:** Click the "Predict with Model A" button to get a credit rating prediction based only on the financial data you've entered.
+    4.  **Enter News Article (for Model B):** Provide a relevant news article about the company in the text area under "2. Predict Credit Rating (Model B - Financial + Sentiment)".
+    5.  **Analyze Sentiment & Predict with Model B:** Click this button to first analyze the sentiment of the news article you provided, and then get a credit rating prediction that incorporates both financial and sentiment data.
+    6.  **Reset Inputs:** Use the "Reset All Inputs" button to clear the form and start fresh.
+    """)
+
+st.markdown("---") # Separator below the tabs
+
+st.header("Enter Company Details")
+
+st.session_state.company_name = st.text_input("Company Name", value=st.session_state.company_name, key="company_name_input")
+
+st.markdown("---")
+
+# --- Input Fields for Financial Metrics ---
+st.header("Enter Financial Metrics")
+
+# Use columns for better layout of inputs
+num_cols_per_row = 2
+cols = st.columns(num_cols_per_row)
+
+for i, col_name in enumerate(financial_cols):
+    with cols[i % num_cols_per_row]:
+        st.write(f"**{col_name}**")
+        # Add a note for percentage-like metrics
+        if 'Margin' in col_name or 'ReturnOn' in col_name or 'TaxRate' in col_name or 'Ratio' in col_name:
+            st.caption("Enter as decimal (e.g., 0.1 for 10%)")
+        
+        # Add a tooltip/help text for each metric
+        metric_help_text = {
+            'currentRatio': 'Measures short-term liquidity: current assets / current liabilities.',
+            'quickRatio': 'Measures short-term liquidity excluding inventory: (current assets - inventory) / current liabilities.',
+            'cashRatio': 'Most conservative liquidity measure: cash / current liabilities.',
+            'daysOfSalesOutstanding': 'Average number of days to collect accounts receivable.',
+            'netProfitMargin': 'Percentage of revenue left after all expenses, including taxes.',
+            'pretaxProfitMargin': 'Percentage of revenue left before taxes.',
+            'grossProfitMargin': 'Percentage of revenue left after deducting cost of goods sold.',
+            'returnOnAssets': 'How efficiently a company uses its assets to generate earnings.',
+            'returnOnEquity': 'How much profit a company generates for each dollar of shareholders\' equity.',
+            'assetTurnover': 'How efficiently a company uses its assets to generate sales.',
+            'fixedAssetTurnover': 'How efficiently a company uses its fixed assets to generate sales.',
+            'debtRatio': 'Total debt / total assets. Measures leverage.',
+            'effectiveTaxRate': 'The actual rate of tax paid by a company on its earnings.',
+            'freeCashFlowOperatingCashFlowRatio': 'Free cash flow / operating cash flow. Measures cash available after capital expenditures.',
+            'freeCashFlowPerShare': 'Free cash flow available per share.',
+            'cashPerShare': 'Cash and cash equivalents per outstanding share.',
+            'enterpriseValueMultiple': 'Enterprise Value / EBITDA. Valuation multiple.',
+            'operatingCashFlowPerShare': 'Cash generated from operations per share.',
+            'operatingCashFlowSalesRatio': 'Operating cash flow / sales. Measures cash generated from each dollar of sales.',
+            'payablesTurnover': 'How many times a company pays off its accounts payable during a period.'
+        }
+        st.info(metric_help_text.get(col_name, "No specific help text available."), icon="💡")
+
+        st.session_state.financial_inputs[col_name] = st.number_input(
+            f"Value for {col_name}",
+            min_value=min_values.get(col_name, 0.0),
+            max_value=max_values.get(col_name, 1000.0),
+            value=st.session_state.financial_inputs.get(col_name, default_values.get(col_name, 0.0)),
+            step=step_values.get(col_name, 0.01),
+            key=f"fin_input_{col_name}" # Unique key for each input
+        )
 
 # Convert financial inputs to a DataFrame row
-financial_df_row = pd.DataFrame([financial_inputs])
+financial_df_row = pd.DataFrame([st.session_state.financial_inputs])
 
+st.markdown("---")
+
+# --- Reset Button ---
+st.button("Reset All Inputs", on_click=reset_inputs)
 
 st.markdown("---")
 
@@ -256,12 +398,37 @@ st.markdown("---")
 st.header("1. Predict Credit Rating (Model A - Financial Only)")
 st.caption("This model uses only the financial metrics entered above.")
 
-if st.button("Predict with Model A"):
+if st.button("Predict with Model A", key="predict_A_button"):
     if 'A' in models and 'fin' in scalers:
         with st.spinner("Predicting with Model A..."):
-            predicted_rating_A = predict_credit_rating(models['A'], scalers['fin'], financial_df_row, financial_cols)
-            st.subheader(f"Predicted Credit Rating (Model A) for {company_name}:")
-            st.success(f"**{predicted_rating_A}**")
+            predicted_rating_A, probabilities_A = predict_credit_rating(models['A'], scalers['fin'], financial_df_row, financial_cols)
+            
+            st.subheader(f"Predicted Credit Rating (Model A) for {st.session_state.company_name}:")
+            col_rating_A, col_popover_A = st.columns([0.7, 0.3])
+            with col_rating_A:
+                st.success(f"**{predicted_rating_A}**")
+            with col_popover_A:
+                with st.popover(f"What is '{predicted_rating_A}'?"):
+                    st.write(f"**{predicted_rating_A}:** {CREDIT_RATING_DEFINITIONS.get(predicted_rating_A, 'Definition not available.')}")
+
+            st.write("---")
+            st.subheader("Prediction Probabilities:")
+            prob_df_A = pd.DataFrame(probabilities_A.items(), columns=['Rating', 'Probability'])
+            prob_df_A['Probability'] = prob_df_A['Probability'].apply(lambda x: f"{x:.2%}") # Format as percentage
+            st.dataframe(prob_df_A.sort_values(by='Probability', ascending=False), hide_index=True, use_container_width=True)
+
+            st.write("---")
+            st.subheader("Key Feature Contributions (Model A):")
+            contributions_A = get_feature_contributions(models['A'], scalers['fin'], financial_df_row, financial_cols)
+            if contributions_A:
+                for feature, value, direction in contributions_A:
+                    if direction == "positive":
+                        st.markdown(f"- **{feature}**: Pushed rating **higher** (Impact: {value:.4f})")
+                    else:
+                        st.markdown(f"- **{feature}**: Pushed rating **lower** (Impact: {value:.4f})")
+            else:
+                st.info("Could not determine feature contributions for Model A.")
+
     else:
         st.warning("Model A or its scaler not loaded. Cannot perform prediction.")
 
@@ -271,19 +438,18 @@ st.markdown("---")
 st.header("2. Predict Credit Rating (Model B - Financial + Sentiment)")
 st.caption("This model combines financial metrics with news article sentiment.")
 
-news_article = st.text_area("Enter Company News Article Here",
-                            "Example: The company announced record loss this quarter, exceeding all expectations and leading to a significant stock price decrease. However, concerns about market competition are rising.",
-                            height=200)
+st.session_state.news_article = st.text_area("Enter Company News Article Here",
+                            value=st.session_state.news_article,
+                            height=200, key="news_article_input")
 
-if st.button("Analyze Sentiment & Predict with Model B"):
-    sentiment_result = analyze_sentiment(news_article)
+if st.button("Analyze Sentiment & Predict with Model B", key="predict_B_button"):
+    sentiment_result = analyze_sentiment(st.session_state.news_article)
     
     st.subheader("News Article Sentiment:")
-    # Display VADER's specific scores for clarity
     st.info(f"VADER Compound Score: {sentiment_result['Avg_Compound']:.2f} (Positive: {sentiment_result['Avg_Positive']:.2f}, Neutral: {sentiment_result['Avg_Neutral']:.2f}, Negative: {sentiment_result['Avg_Negative']:.2f})")
 
     if sentiment_result['category'] == "Positive":
-        st.success(f"Sentiment Category: **{sentiment_result['category']}** 😊")
+        st.success(f"Sentiment Category: **{sentiment_result['category']}** �")
     elif sentiment_result['category'] == "Negative":
         st.error(f"Sentiment Category: **{sentiment_result['category']}** 😠")
     else:
@@ -291,31 +457,53 @@ if st.button("Analyze Sentiment & Predict with Model B"):
 
     # Prepare data for Model B prediction
     if 'B' in models and 'all' in scalers:
-        # Use the derived VADER scores directly as your sentiment features
         avg_positive = sentiment_result['Avg_Positive']
         avg_neutral = sentiment_result['Avg_Neutral']
         avg_negative = sentiment_result['Avg_Negative']
         avg_compound = sentiment_result['Avg_Compound']
 
-        # Combine all inputs into a single dictionary
-        all_inputs = {**financial_inputs,
+        all_inputs = {**st.session_state.financial_inputs,
                       'Avg_Positive': avg_positive,
                       'Avg_Neutral': avg_neutral,
                       'Avg_Negative': avg_negative,
                       'Avg_Compound': avg_compound}
         
-        # Create a DataFrame from the combined dictionary, ensuring correct order
-        combined_df_row = pd.DataFrame([all_inputs])[all_cols] # Explicitly select and order columns
+        combined_df_row = pd.DataFrame([all_inputs])[all_cols]
         
         with st.spinner("Predicting with Model B..."):
-            predicted_rating_B = predict_credit_rating(models['B'], scalers['all'], combined_df_row, all_cols)
-            st.subheader(f"Predicted Credit Rating (Model B) for {company_name}:")
-            st.success(f"**{predicted_rating_B}**")
+            predicted_rating_B, probabilities_B = predict_credit_rating(models['B'], scalers['all'], combined_df_row, all_cols)
+            
+            st.subheader(f"Predicted Credit Rating (Model B) for {st.session_state.company_name}:")
+            col_rating_B, col_popover_B = st.columns([0.7, 0.3])
+            with col_rating_B:
+                st.success(f"**{predicted_rating_B}**")
+            with col_popover_B:
+                with st.popover(f"What is '{predicted_rating_B}'?"):
+                    st.write(f"**{predicted_rating_B}:** {CREDIT_RATING_DEFINITIONS.get(predicted_rating_B, 'Definition not available.')}")
+
+            st.write("---")
+            st.subheader("Prediction Probabilities:")
+            prob_df_B = pd.DataFrame(probabilities_B.items(), columns=['Rating', 'Probability'])
+            prob_df_B['Probability'] = prob_df_B['Probability'].apply(lambda x: f"{x:.2%}") # Format as percentage
+            st.dataframe(prob_df_B.sort_values(by='Probability', ascending=False), hide_index=True, use_container_width=True)
+
+            st.write("---")
+            st.subheader("Key Feature Contributions (Model B):")
+            contributions_B = get_feature_contributions(models['B'], scalers['all'], combined_df_row, all_cols)
+            if contributions_B:
+                for feature, value, direction in contributions_B:
+                    if direction == "positive":
+                        st.markdown(f"- **{feature}**: Pushed rating **higher** (Impact: {value:.4f})")
+                    else:
+                        st.markdown(f"- **{feature}**: Pushed rating **lower** (Impact: {value:.4f})")
+            else:
+                st.info("Could not determine feature contributions for Model B.")
     else:
         st.warning("Model B or its scaler not loaded. Cannot perform prediction.")
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant.")
+�
 
 
 
