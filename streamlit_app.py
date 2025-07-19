@@ -2,12 +2,26 @@ import streamlit as st
 import pandas as pd
 import joblib # For loading the scalers and models
 from catboost import CatBoostClassifier
+# from textblob import TextBlob # Removed TextBlob
 from nltk.sentiment.vader import SentimentIntensityAnalyzer # Import VADER
+import nltk # Import nltk
+
+# --- NLTK Data Download (Crucial for VADER) ---
+@st.cache_resource # Cache the download to run only once
+def download_nltk_vader():
+    try:
+        nltk.data.find('sentiment/vader_lexicon.zip')
+    except nltk.downloader.DownloadError:
+        st.info("Downloading VADER lexicon for sentiment analysis. This will only happen once.")
+        nltk.download('vader_lexicon')
+        st.success("VADER lexicon downloaded!")
+
+download_nltk_vader()
 
 # --- Configuration ---
 st.set_page_config(page_title="Credit Rating & Sentiment Predictor", page_icon="📈", layout="centered")
 
-# --- Define Feature Columns (MUST match your training script) ---
+# --- Define Feature Columns (MUST match your training script's exact features and order) ---
 financial_cols = [
     'currentRatio', 'quickRatio', 'cashRatio', 'daysOfSalesOutstanding',
     'netProfitMargin', 'pretaxProfitMargin', 'grossProfitMargin', 'operatingProfitMargin',
@@ -15,7 +29,7 @@ financial_cols = [
     'fixedAssetTurnover', 'debtEquityRatio', 'debtRatio', 'effectiveTaxRate',
     'freeCashFlowOperatingCashFlowRatio', 'freeCashFlowPerShare', 'cashPerShare',
     'companyEquityMultiplier', 'ebitPerRevenue', 'enterpriseValueMultiple',
-    'payablesTurnover','operatingCashFlowPerShare', 'operatingCashFlowSalesRatio'
+    'operatingCashFlowPerShare', 'operatingCashFlowSalesRatio', 'payablesTurnover'
 ]
 
 sentiment_cols = ['Avg_Positive', 'Avg_Neutral', 'Avg_Negative', 'Avg_Compound']
@@ -279,3 +293,4 @@ if st.button("Analyze Sentiment & Predict with Model B"):
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant. Remember to train and save your models and scalers!")
+
