@@ -11,7 +11,7 @@ import nltk # Import nltk
 def download_nltk_vader():
     try:
         nltk.data.find('sentiment/vader_lexicon.zip')
-    except nltk.downloader.DownloadError:
+    except LookupError: # Changed from nltk.downloader.DownloadError to LookupError
         st.info("Downloading VADER lexicon for sentiment analysis. This will only happen once.")
         nltk.download('vader_lexicon')
         st.success("VADER lexicon downloaded!")
@@ -29,7 +29,7 @@ financial_cols = [
     'fixedAssetTurnover', 'debtEquityRatio', 'debtRatio', 'effectiveTaxRate',
     'freeCashFlowOperatingCashFlowRatio', 'freeCashFlowPerShare', 'cashPerShare',
     'companyEquityMultiplier', 'ebitPerRevenue', 'enterpriseValueMultiple',
-    'operatingCashFlowPerShare', 'operatingCashFlowSalesRatio', 'payablesTurnover'
+    'payablesTurnover','operatingCashFlowPerShare', 'operatingCashFlowSalesRatio'
 ]
 
 sentiment_cols = ['Avg_Positive', 'Avg_Neutral', 'Avg_Negative', 'Avg_Compound']
@@ -293,4 +293,5 @@ if st.button("Analyze Sentiment & Predict with Model B"):
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant. Remember to train and save your models and scalers!")
+
 
