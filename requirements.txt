@@ -3,4 +3,4 @@ pandas
 catboost
 scikit-learn
 joblib
-textblob
+nltk
