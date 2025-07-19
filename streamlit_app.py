@@ -136,29 +136,65 @@ company_name = st.text_input("Company Name", "Example Corp")
 
 # Create a dictionary to hold all financial inputs
 financial_inputs = {}
-for col in financial_cols:
-    # Provide sensible default values and ranges based on typical financial ratios
-    # You might need to adjust these based on your actual data's distribution
-    default_value = 0.0
-    min_val = -1000.0 # Allow for negative values in some metrics like Return on Assets
-    max_val = 1000.0
-    step_val = 0.01
 
-    if 'Ratio' in col or 'Multiplier' in col or 'Turnover' in col:
-        default_value = 1.0
-        min_val = 0.0
-        max_val = 10.0
-        step_val = 0.01
-    elif 'Margin' in col or 'ReturnOn' in col or 'TaxRate' in col:
-        # These are often percentages, convert to decimal for model input
-        default_value = 0.10 # 10%
-        min_val = -1.0 # -100%
-        max_val = 1.0 # 100%
-        step_val = 0.001
-        st.write(f"**{col} (as decimal, e.g., 0.1 for 10%)**")
-        financial_inputs[col] = st.number_input(f"{col}", min_value=min_val, max_value=max_val, value=default_value, step=step_val, key=f"fin_{col}")
-    else:
-        financial_inputs[col] = st.number_input(f"{col}", min_value=min_val, max_value=max_val, value=default_value, step=step_val, key=f"fin_{col}")
+# Define sensible default values and ranges for each financial metric
+# These are crucial for user experience and preventing invalid inputs
+# Values are based on general financial health indicators.
+default_values = {
+    'currentRatio': 1.8, 'quickRatio': 1.0, 'cashRatio': 0.25, 'daysOfSalesOutstanding': 35.0,
+    'netProfitMargin': 0.10, 'pretaxProfitMargin': 0.12, 'grossProfitMargin': 0.30, 'operatingProfitMargin': 0.15,
+    'returnOnAssets': 0.08, 'returnOnCapitalEmployed': 0.15, 'returnOnEquity': 0.20, 'assetTurnover': 1.2,
+    'fixedAssetTurnover': 3.5, 'debtEquityRatio': 0.7, 'debtRatio': 0.4, 'effectiveTaxRate': 0.28,
+    'freeCashFlowOperatingCashFlowRatio': 0.75, 'freeCashFlowPerShare': 2.5, 'cashPerShare': 3.0,
+    'companyEquityMultiplier': 2.5, 'ebitPerRevenue': 0.18, 'enterpriseValueMultiple': 12.0,
+    'operatingCashFlowPerShare': 3.0, 'operatingCashFlowSalesRatio': 0.12, 'payablesTurnover': 9.0
+}
+
+min_values = {
+    'currentRatio': 0.0, 'quickRatio': 0.0, 'cashRatio': 0.0, 'daysOfSalesOutstanding': 0.0,
+    'netProfitMargin': -5.0, 'pretaxProfitMargin': -5.0, 'grossProfitMargin': -5.0, 'operatingProfitMargin': -5.0,
+    'returnOnAssets': -5.0, 'returnOnCapitalEmployed': -5.0, 'returnOnEquity': -5.0, 'assetTurnover': 0.0,
+    'fixedAssetTurnover': 0.0, 'debtEquityRatio': 0.0, 'debtRatio': 0.0, 'effectiveTaxRate': 0.0,
+    'freeCashFlowOperatingCashFlowRatio': -10.0, 'freeCashFlowPerShare': -100.0, 'cashPerShare': 0.0,
+    'companyEquityMultiplier': 1.0, 'ebitPerRevenue': -5.0, 'enterpriseValueMultiple': 0.0,
+    'operatingCashFlowPerShare': -100.0, 'operatingCashFlowSalesRatio': -5.0, 'payablesTurnover': 0.0
+}
+
+max_values = {
+    'currentRatio': 10.0, 'quickRatio': 5.0, 'cashRatio': 1.0, 'daysOfSalesOutstanding': 365.0,
+    'netProfitMargin': 1.0, 'pretaxProfitMargin': 1.0, 'grossProfitMargin': 1.0, 'operatingProfitMargin': 1.0,
+    'returnOnAssets': 1.0, 'returnOnCapitalEmployed': 1.0, 'returnOnEquity': 1.0, 'assetTurnover': 5.0,
+    'fixedAssetTurnover': 20.0, 'debtEquityRatio': 10.0, 'debtRatio': 1.0, 'effectiveTaxRate': 1.0,
+    'freeCashFlowOperatingCashFlowRatio': 5.0, 'freeCashFlowPerShare': 100.0, 'cashPerShare': 50.0,
+    'companyEquityMultiplier': 10.0, 'ebitPerRevenue': 1.0, 'enterpriseValueMultiple': 50.0,
+    'operatingCashFlowPerShare': 100.0, 'operatingCashFlowSalesRatio': 1.0, 'payablesTurnover': 20.0
+}
+
+step_values = {
+    'currentRatio': 0.01, 'quickRatio': 0.01, 'cashRatio': 0.01, 'daysOfSalesOutstanding': 1.0,
+    'netProfitMargin': 0.001, 'pretaxProfitMargin': 0.001, 'grossProfitMargin': 0.001, 'operatingProfitMargin': 0.001,
+    'returnOnAssets': 0.001, 'returnOnCapitalEmployed': 0.001, 'returnOnEquity': 0.001, 'assetTurnover': 0.01,
+    'fixedAssetTurnover': 0.01, 'debtEquityRatio': 0.01, 'debtRatio': 0.001, 'effectiveTaxRate': 0.001,
+    'freeCashFlowOperatingCashFlowRatio': 0.01, 'freeCashFlowPerShare': 0.1, 'cashPerShare': 0.1,
+    'companyEquityMultiplier': 0.01, 'ebitPerRevenue': 0.001, 'enterpriseValueMultiple': 0.1,
+    'operatingCashFlowPerShare': 0.1, 'operatingCashFlowSalesRatio': 0.001, 'payablesTurnover': 0.01
+}
+
+
+for col in financial_cols:
+    st.write(f"**{col}**")
+    # Add a note for percentage-like metrics
+    if 'Margin' in col or 'ReturnOn' in col or 'TaxRate' in col or 'Ratio' in col and col not in ['currentRatio', 'quickRatio', 'cashRatio', 'debtEquityRatio', 'debtRatio', 'freeCashFlowOperatingCashFlowRatio', 'operatingCashFlowSalesRatio']:
+        st.caption("Enter as decimal (e.g., 0.1 for 10%)")
+    
+    financial_inputs[col] = st.number_input(
+        f"Enter value for {col}",
+        min_value=min_values.get(col, 0.0), # Use .get() with a fallback for safety
+        max_value=max_values.get(col, 1000.0),
+        value=default_values.get(col, 0.0),
+        step=step_values.get(col, 0.01),
+        key=f"fin_{col}"
+    )
 
 # Convert financial inputs to a DataFrame row
 financial_df_row = pd.DataFrame([financial_inputs])
@@ -202,11 +238,22 @@ if st.button("Analyze Sentiment & Predict with Model B"):
 
     # Prepare data for Model B prediction
     if 'B' in models and 'all' in scalers:
+        # The sentiment features (Avg_Positive, Avg_Neutral, Avg_Negative, Avg_Compound)
+        # need to be derived from the TextBlob polarity and subjectivity
+        # Ensure this logic matches how these features were created in your training data
+        
+        # Simple mapping for demonstration. Adjust if your training data's sentiment features
+        # were derived differently (e.g., from a more complex NLP model).
+        avg_positive = 1 if sentiment_result['polarity'] > 0.1 else 0
+        avg_neutral = 1 if -0.1 <= sentiment_result['polarity'] <= 0.1 else 0
+        avg_negative = 1 if sentiment_result['polarity'] < -0.1 else 0
+        avg_compound = sentiment_result['polarity'] # Using TextBlob polarity as compound
+
         sentiment_data = {
-            'Avg_Positive': [1 if sentiment_result['polarity'] > 0.1 else 0], # Simple binary for demo
-            'Avg_Neutral': [1 if -0.1 <= sentiment_result['polarity'] <= 0.1 else 0],
-            'Avg_Negative': [1 if sentiment_result['polarity'] < -0.1 else 0],
-            'Avg_Compound': [sentiment_result['polarity']] # Using polarity as compound score
+            'Avg_Positive': [avg_positive],
+            'Avg_Neutral': [avg_neutral],
+            'Avg_Negative': [avg_negative],
+            'Avg_Compound': [avg_compound]
         }
         # Create a DataFrame for sentiment features
         sentiment_df_row = pd.DataFrame([sentiment_data])
@@ -224,4 +271,6 @@ if st.button("Analyze Sentiment & Predict with Model B"):
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant. Remember to train and save your models and scalers!")
+
+
 
