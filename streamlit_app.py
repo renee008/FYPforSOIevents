@@ -131,7 +131,7 @@ def predict_credit_rating(model, scaler, input_df, feature_columns) -> tuple:
         
         # Use .item() to extract the scalar string value from the numpy array
         predicted_rating = model.predict(scaled_data).item()
-        probabilities = model.predict_proba(scaled_data)[0]
+        probabilities = model.predict_proba(scaled_data)[0] # Get probabilities for the single instance
         
         # Map probabilities to class names
         class_names = model.classes_
@@ -202,20 +202,27 @@ def get_feature_contributions(model, scaler, input_df, feature_columns, top_n=5)
     and their impact (positive/negative) for the predicted class.
     """
     try:
-        input_df_reindexed = input_df[feature_columns]
+        # Ensure feature_columns is a list
+        feature_columns_list = list(feature_columns)
+
+        input_df_reindexed = input_df[feature_columns_list]
         scaled_data = scaler.transform(input_df_reindexed)
         
+        # Convert scaled_data back to a DataFrame with column names for SHAP
+        # This is often more robust for SHAP explainers, especially with CatBoost
+        scaled_data_df = pd.DataFrame(scaled_data, columns=feature_columns_list)
+        
         explainer = shap.TreeExplainer(model)
-        shap_values = explainer.shap_values(scaled_data)
-
-        shap_values_for_prediction = None
+        shap_values = explainer.shap_values(scaled_data_df) # Pass the DataFrame here
 
         # Get the predicted class label (e.g., 'B', 'AAA')
+        # Use .item() to ensure it's a scalar string
         predicted_class_label = model.predict(scaled_data).item()
         
-        if isinstance(shap_values, list) and len(shap_values) > 1:
-            # This is the standard multi-class output from TreeExplainer: list of arrays, one for each class
-            # Find the integer index of the predicted class within the model's classes
+        shap_values_for_prediction = None
+
+        if isinstance(shap_values, list) and len(shap_values) == len(model.classes_):
+            # Standard multi-class output from TreeExplainer: list of arrays, one for each class
             try:
                 predicted_class_index = list(model.classes_).index(predicted_class_label)
             except ValueError:
@@ -224,23 +231,35 @@ def get_feature_contributions(model, scaler, input_df, feature_columns, top_n=5)
             
             if predicted_class_index < len(shap_values):
                 # Access the SHAP values for the specific predicted class and the single instance
+                # shap_values[predicted_class_index] will be (1, N_FEATURES), so take [0] to get 1D array
                 shap_values_for_prediction = shap_values[predicted_class_index][0] 
             else:
                 st.warning(f"Predicted class index {predicted_class_index} out of bounds for SHAP values list (len: {len(shap_values)}).")
                 return []
-        elif isinstance(shap_values, np.ndarray) and shap_values.ndim >= 1 and shap_values.shape[0] == 1:
-            # This handles binary classification or cases where SHAP returns a single array for the output
-            # For a single instance, it should be shap_values[0]
-            shap_values_for_prediction = shap_values[0]
+        elif isinstance(shap_values, np.ndarray):
+            # This case handles binary classification or simplified multi-class where SHAP returns a single array
+            # If it's 2D (1, N_FEATURES), take the first row. If 1D, use directly.
+            if shap_values.ndim == 2 and shap_values.shape[0] == 1:
+                shap_values_for_prediction = shap_values[0]
+            elif shap_values.ndim == 1: 
+                shap_values_for_prediction = shap_values
+            else:
+                st.warning(f"Unexpected SHAP numpy array structure. ndim: {shap_values.ndim}, shape: {shap_values.shape}")
+                return []
         else:
             st.warning("Unexpected SHAP values type or structure. Expected list of arrays or numpy array.")
             return []
 
         if shap_values_for_prediction is None:
             return []
+        
+        # Final check: ensure the length of SHAP values matches the number of features
+        if len(shap_values_for_prediction) != len(feature_columns_list):
+            st.warning(f"Mismatch in SHAP values length ({len(shap_values_for_prediction)}) and feature columns length ({len(feature_columns_list)}). This can cause incorrect explanations.")
+            return []
 
         # Create a Series for easier handling
-        feature_impact = pd.Series(shap_values_for_prediction, index=feature_columns)
+        feature_impact = pd.Series(shap_values_for_prediction, index=feature_columns_list)
         
         # Sort by absolute value to find the most impactful features
         sorted_impact = feature_impact.abs().sort_values(ascending=False)
