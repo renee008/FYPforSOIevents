@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import joblib # For loading the scalers and models
 from catboost import CatBoostClassifier
-# from textblob import TextBlob # Removed TextBlob
 from nltk.sentiment.vader import SentimentIntensityAnalyzer # Import VADER
 import nltk # Import nltk
 
@@ -11,7 +10,7 @@ import nltk # Import nltk
 def download_nltk_vader():
     try:
         nltk.data.find('sentiment/vader_lexicon.zip')
-    except LookupError: # Changed from nltk.downloader.DownloadError to LookupError
+    except LookupError: # Catch LookupError for missing data
         st.info("Downloading VADER lexicon for sentiment analysis. This will only happen once.")
         nltk.download('vader_lexicon')
         st.success("VADER lexicon downloaded!")
@@ -21,15 +20,15 @@ download_nltk_vader()
 # --- Configuration ---
 st.set_page_config(page_title="Credit Rating & Sentiment Predictor", page_icon="📈", layout="centered")
 
-# --- Define Feature Columns (MUST match your training script's exact features and order) ---
+# --- Define Feature Columns (Consistent with 5 removed metrics) ---
+# Removed: debtEquityRatio, ebitPerRevenue, returnOnCapitalEmployed, operatingProfitMargin, companyEquityMultiplier
 financial_cols = [
     'currentRatio', 'quickRatio', 'cashRatio', 'daysOfSalesOutstanding',
-    'netProfitMargin', 'pretaxProfitMargin', 'grossProfitMargin', 'operatingProfitMargin',
-    'returnOnAssets', 'returnOnCapitalEmployed', 'returnOnEquity', 'assetTurnover',
-    'fixedAssetTurnover', 'debtEquityRatio', 'debtRatio', 'effectiveTaxRate',
+    'netProfitMargin', 'pretaxProfitMargin', 'grossProfitMargin',
+    'returnOnAssets', 'returnOnEquity', 'assetTurnover',
+    'fixedAssetTurnover', 'debtRatio', 'effectiveTaxRate',
     'freeCashFlowOperatingCashFlowRatio', 'freeCashFlowPerShare', 'cashPerShare',
-    'companyEquityMultiplier', 'ebitPerRevenue', 'enterpriseValueMultiple',
-    'payablesTurnover','operatingCashFlowPerShare', 'operatingCashFlowSalesRatio'
+    'enterpriseValueMultiple', 'operatingCashFlowPerShare', 'operatingCashFlowSalesRatio', 'payablesTurnover'
 ]
 
 sentiment_cols = ['Avg_Positive', 'Avg_Neutral', 'Avg_Negative', 'Avg_Compound']
@@ -51,7 +50,7 @@ def load_models_and_scalers():
         st.success("Model A (Financial Only) loaded successfully!")
     except Exception as e:
         st.error(f"Error loading Model A: {e}")
-        st.warning("Please ensure 'CatboostML.modelA.cbm' is in the same directory.")
+        st.warning("Please ensure 'CatboostML.modelA.cbm' is in the same directory and trained with the correct features.")
 
     try:
         scaler_fin = joblib.load('scaler_fin.pkl')
@@ -59,7 +58,7 @@ def load_models_and_scalers():
         st.success("Scaler for Model A loaded successfully!")
     except Exception as e:
         st.error(f"Error loading scaler_fin.pkl: {e}")
-        st.warning("Please ensure 'scaler_fin.pkl' is in the same directory.")
+        st.warning("Please ensure 'scaler_fin.pkl' is in the same directory and trained with the correct features.")
 
     # Load Model B (Financial + Sentiment) and its scaler
     try:
@@ -69,7 +68,7 @@ def load_models_and_scalers():
         st.success("Model B (Financial + Sentiment) loaded successfully!")
     except Exception as e:
         st.error(f"Error loading Model B: {e}")
-        st.warning("Please ensure 'CatboostML.modelB.cbm' is in the same directory.")
+        st.warning("Please ensure 'CatboostML.modelB.cbm' is in the same directory and trained with the correct features.")
 
     try:
         scaler_all = joblib.load('scaler_all.pkl')
@@ -77,7 +76,7 @@ def load_models_and_scalers():
         st.success("Scaler for Model B loaded successfully!")
     except Exception as e:
         st.error(f"Error loading scaler_all.pkl: {e}")
-        st.warning("Please ensure 'scaler_all.pkl' is in the same directory.")
+        st.warning("Please ensure 'scaler_all.pkl' is in the same directory and trained with the correct features.")
 
     return models, scalers
 
@@ -111,50 +110,73 @@ def predict_credit_rating(model, scaler, input_df, feature_columns) -> str:
 
 def analyze_sentiment(news_article: str) -> dict:
     """
-    Analyzes the sentiment of a news article using VADER and returns polarity and subjectivity.
-    
-    IMPORTANT: This function now uses VADER. Ensure your training data's
-    'Avg_Positive', 'Avg_Neutral', 'Avg_Negative', and 'Avg_Compound'
-    features were generated using VADER for consistency.
+    Analyzes the sentiment of a news article using VADER and returns the
+    Avg_Positive, Avg_Neutral, Avg_Negative, and Avg_Compound scores
+    as expected by your model.
     """
     if not news_article:
         return {'polarity': 0.0, 'subjectivity': 0.0, 'category': 'Neutral',
-                'pos': 0.0, 'neu': 0.0, 'neg': 0.0, 'compound': 0.0}
+                'Avg_Positive': 0.0, 'Avg_Neutral': 1.0, 'Avg_Negative': 0.0, 'Avg_Compound': 0.0}
 
     try:
         analyzer = SentimentIntensityAnalyzer()
         vs = analyzer.polarity_scores(news_article)
         
-        # VADER provides 'neg', 'neu', 'pos', 'compound'
-        # Map these directly to your expected features
-        avg_positive = vs['pos']
-        avg_neutral = vs['neu']
-        avg_negative = vs['neg']
-        avg_compound = vs['compound'] # VADER's compound score is often used directly
+        compound_score = vs['compound']
 
         # Determine sentiment category based on compound score
-        if avg_compound >= 0.05: # VADER's typical positive threshold
+        if compound_score >= 0.05:
             category = "Positive"
-        elif avg_compound <= -0.05: # VADER's typical negative threshold
+        elif compound_score <= -0.05:
             category = "Negative"
         else:
             category = "Neutral"
             
-        return {'polarity': avg_compound, 'subjectivity': 0.0, 'category': category,
-                'pos': avg_positive, 'neu': avg_neutral, 'neg': avg_negative, 'compound': avg_compound}
+        # Generate Avg_Positive, Avg_Neutral, Avg_Negative as binary flags
+        avg_positive_flag = 1.0 if compound_score >= 0.05 else 0.0
+        avg_neutral_flag = 1.0 if -0.05 < compound_score < 0.05 else 0.0
+        avg_negative_flag = 1.0 if compound_score <= -0.05 else 0.0
+
+        return {'polarity': compound_score,
+                'subjectivity': 0.0,
+                'category': category,
+                'Avg_Positive': avg_positive_flag,
+                'Avg_Neutral': avg_neutral_flag,
+                'Avg_Negative': avg_negative_flag,
+                'Avg_Compound': compound_score}
     except Exception as e:
         st.error(f"Error during sentiment analysis: {e}")
         return {'polarity': 0.0, 'subjectivity': 0.0, 'category': 'Error',
-                'pos': 0.0, 'neu': 0.0, 'neg': 0.0, 'compound': 0.0}
+                'Avg_Positive': 0.0, 'Avg_Neutral': 0.0, 'Avg_Negative': 0.0, 'Avg_Compound': 0.0}
 
 # --- Streamlit UI ---
 
 st.title("Company Financial Health & News Sentiment Analyzer")
-st.markdown("""
-This application predicts a company's credit rating using two models:
-1.  **Model A**: Based on financial metrics only.
-2.  **Model B**: Based on financial metrics and news sentiment.
-""")
+
+# --- About Credit Ratings Section (using expander for a cleaner look) ---
+with st.expander("About Credit Ratings & This Website"):
+    st.markdown("""
+    ### What is a Credit Rating?
+    A credit rating is an independent assessment of a company's financial strength and its ability to meet its financial obligations. These ratings are crucial for investors, lenders, and businesses as they provide a quick snapshot of creditworthiness, influencing borrowing costs and investment decisions. Ratings typically range from 'AAA' (highest quality, lowest risk) to 'D' (default).
+
+    ### How are Credit Ratings Calculated?
+    Credit rating agencies use a comprehensive approach, combining quantitative financial analysis with qualitative factors.
+    * **Financial Metrics (Quantitative):** This includes analyzing a company's balance sheet, income statement, and cash flow statement. Key ratios like liquidity (e.g., current ratio), profitability (e.g., gross profit margin), leverage (e.g., debt ratio), and efficiency (e.g., days of sales outstanding) are vital.
+    * **News Sentiment (Qualitative):** Public sentiment and news coverage can significantly impact a company's perceived risk. Positive news might signal stability and growth, while negative news could indicate potential challenges.
+
+    This application uses two machine learning models:
+    * **Model A (Financial Only):** Predicts credit ratings based solely on a set of key financial metrics.
+    * **Model B (Financial + Sentiment):** Combines these financial metrics with sentiment analysis derived from news articles to provide a more holistic prediction.
+
+    ### How to Use This Website
+    1.  **Enter Company Name:** Provide the name of the company you are analyzing.
+    2.  **Input Financial Metrics:** Fill in the values for the various financial ratios in the designated section. Ensure you enter percentage-like metrics (e.g., margins, returns) as decimals (e.g., 0.10 for 10%).
+    3.  **Predict with Model A:** Click the "Predict with Model A" button to get a credit rating prediction based only on the financial data.
+    4.  **Enter News Article (for Model B):** Provide a relevant news article about the company in the text area for Model B.
+    5.  **Analyze Sentiment & Predict with Model B:** Click this button to first analyze the sentiment of the news article and then get a credit rating prediction that incorporates both financial and sentiment data.
+    """)
+
+st.markdown("---")
 
 # --- Input Fields for Financial Metrics (Common to both models) ---
 st.header("Enter Financial Metrics")
@@ -167,43 +189,43 @@ financial_inputs = {}
 # Define sensible default values and ranges for each financial metric
 # These are crucial for user experience and preventing invalid inputs
 # Values are based on general financial health indicators.
+# Updated default_values, min_values, max_values, step_values to match new financial_cols
 default_values = {
     'currentRatio': 1.8, 'quickRatio': 1.0, 'cashRatio': 0.25, 'daysOfSalesOutstanding': 35.0,
-    'netProfitMargin': 0.10, 'pretaxProfitMargin': 0.12, 'grossProfitMargin': 0.30, 'operatingProfitMargin': 0.15,
-    'returnOnAssets': 0.08, 'returnOnCapitalEmployed': 0.15, 'returnOnEquity': 0.20, 'assetTurnover': 1.2,
-    'fixedAssetTurnover': 3.5, 'debtEquityRatio': 0.7, 'debtRatio': 0.4, 'effectiveTaxRate': 0.28,
+    'netProfitMargin': 0.10, 'pretaxProfitMargin': 0.12, 'grossProfitMargin': 0.30,
+    'returnOnAssets': 0.08, 'returnOnEquity': 0.20, 'assetTurnover': 1.2,
+    'fixedAssetTurnover': 3.5, 'debtRatio': 0.4, 'effectiveTaxRate': 0.28,
     'freeCashFlowOperatingCashFlowRatio': 0.75, 'freeCashFlowPerShare': 2.5, 'cashPerShare': 3.0,
-    'companyEquityMultiplier': 2.5, 'ebitPerRevenue': 0.18, 'enterpriseValueMultiple': 12.0,
-    'operatingCashFlowPerShare': 3.0, 'operatingCashFlowSalesRatio': 0.12, 'payablesTurnover': 9.0
+    'enterpriseValueMultiple': 12.0, 'operatingCashFlowPerShare': 3.0, 'operatingCashFlowSalesRatio': 0.12, 'payablesTurnover': 9.0
 }
 
 min_values = {
     'currentRatio': 0.0, 'quickRatio': 0.0, 'cashRatio': 0.0, 'daysOfSalesOutstanding': 0.0,
-    'netProfitMargin': -5.0, 'pretaxProfitMargin': -5.0, 'grossProfitMargin': -5.0, 'operatingProfitMargin': -5.0,
-    'returnOnAssets': -5.0, 'returnOnCapitalEmployed': -5.0, 'returnOnEquity': -5.0, 'assetTurnover': 0.0,
-    'fixedAssetTurnover': 0.0, 'debtEquityRatio': 0.0, 'debtRatio': 0.0, 'effectiveTaxRate': 0.0,
+    'netProfitMargin': -5.0, 'pretaxProfitMargin': -5.0, 'grossProfitMargin': -5.0,
+    'returnOnAssets': -5.0, 'returnOnEquity': -5.0, 'assetTurnover': 0.0,
+    'fixedAssetTurnover': 0.0, 'debtRatio': 0.0, 'effectiveTaxRate': 0.0,
     'freeCashFlowOperatingCashFlowRatio': -10.0, 'freeCashFlowPerShare': -100.0, 'cashPerShare': 0.0,
-    'companyEquityMultiplier': 1.0, 'ebitPerRevenue': -5.0, 'enterpriseValueMultiple': 0.0,
+    'enterpriseValueMultiple': 0.0,
     'operatingCashFlowPerShare': -100.0, 'operatingCashFlowSalesRatio': -5.0, 'payablesTurnover': 0.0
 }
 
 max_values = {
     'currentRatio': 10.0, 'quickRatio': 5.0, 'cashRatio': 1.0, 'daysOfSalesOutstanding': 365.0,
-    'netProfitMargin': 1.0, 'pretaxProfitMargin': 1.0, 'grossProfitMargin': 1.0, 'operatingProfitMargin': 1.0,
-    'returnOnAssets': 1.0, 'returnOnCapitalEmployed': 1.0, 'returnOnEquity': 1.0, 'assetTurnover': 5.0,
-    'fixedAssetTurnover': 20.0, 'debtEquityRatio': 10.0, 'debtRatio': 1.0, 'effectiveTaxRate': 1.0,
+    'netProfitMargin': 1.0, 'pretaxProfitMargin': 1.0, 'grossProfitMargin': 1.0,
+    'returnOnAssets': 1.0, 'returnOnEquity': 1.0, 'assetTurnover': 5.0,
+    'fixedAssetTurnover': 20.0, 'debtRatio': 1.0, 'effectiveTaxRate': 1.0,
     'freeCashFlowOperatingCashFlowRatio': 5.0, 'freeCashFlowPerShare': 100.0, 'cashPerShare': 50.0,
-    'companyEquityMultiplier': 10.0, 'ebitPerRevenue': 1.0, 'enterpriseValueMultiple': 50.0,
+    'enterpriseValueMultiple': 50.0,
     'operatingCashFlowPerShare': 100.0, 'operatingCashFlowSalesRatio': 1.0, 'payablesTurnover': 20.0
 }
 
 step_values = {
     'currentRatio': 0.01, 'quickRatio': 0.01, 'cashRatio': 0.01, 'daysOfSalesOutstanding': 1.0,
-    'netProfitMargin': 0.001, 'pretaxProfitMargin': 0.001, 'grossProfitMargin': 0.001, 'operatingProfitMargin': 0.001,
-    'returnOnAssets': 0.001, 'returnOnCapitalEmployed': 0.001, 'returnOnEquity': 0.001, 'assetTurnover': 0.01,
-    'fixedAssetTurnover': 0.01, 'debtEquityRatio': 0.01, 'debtRatio': 0.001, 'effectiveTaxRate': 0.001,
+    'netProfitMargin': 0.001, 'pretaxProfitMargin': 0.001, 'grossProfitMargin': 0.001,
+    'returnOnAssets': 0.001, 'returnOnEquity': 0.001, 'assetTurnover': 0.01,
+    'fixedAssetTurnover': 0.01, 'debtRatio': 0.001, 'effectiveTaxRate': 0.001,
     'freeCashFlowOperatingCashFlowRatio': 0.01, 'freeCashFlowPerShare': 0.1, 'cashPerShare': 0.1,
-    'companyEquityMultiplier': 0.01, 'ebitPerRevenue': 0.001, 'enterpriseValueMultiple': 0.1,
+    'enterpriseValueMultiple': 0.1,
     'operatingCashFlowPerShare': 0.1, 'operatingCashFlowSalesRatio': 0.001, 'payablesTurnover': 0.01
 }
 
@@ -257,7 +279,7 @@ if st.button("Analyze Sentiment & Predict with Model B"):
     
     st.subheader("News Article Sentiment:")
     # Display VADER's specific scores for clarity
-    st.info(f"VADER Scores: Positive: {sentiment_result['pos']:.2f}, Neutral: {sentiment_result['neu']:.2f}, Negative: {sentiment_result['neg']:.2f}, Compound: {sentiment_result['compound']:.2f}")
+    st.info(f"VADER Compound Score: {sentiment_result['Avg_Compound']:.2f} (Positive: {sentiment_result['Avg_Positive']:.2f}, Neutral: {sentiment_result['Avg_Neutral']:.2f}, Negative: {sentiment_result['Avg_Negative']:.2f})")
 
     if sentiment_result['category'] == "Positive":
         st.success(f"Sentiment Category: **{sentiment_result['category']}** 😊")
@@ -268,11 +290,11 @@ if st.button("Analyze Sentiment & Predict with Model B"):
 
     # Prepare data for Model B prediction
     if 'B' in models and 'all' in scalers:
-        # Use VADER's scores directly as your sentiment features
-        avg_positive = sentiment_result['pos']
-        avg_neutral = sentiment_result['neu']
-        avg_negative = sentiment_result['neg']
-        avg_compound = sentiment_result['compound']
+        # Use the derived VADER scores directly as your sentiment features
+        avg_positive = sentiment_result['Avg_Positive']
+        avg_neutral = sentiment_result['Avg_Neutral']
+        avg_negative = sentiment_result['Avg_Negative']
+        avg_compound = sentiment_result['Avg_Compound']
 
         # Combine all inputs into a single dictionary
         all_inputs = {**financial_inputs,
@@ -293,5 +315,6 @@ if st.button("Analyze Sentiment & Predict with Model B"):
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant. Remember to train and save your models and scalers!")
+
 
 
