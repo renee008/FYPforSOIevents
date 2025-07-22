@@ -100,7 +100,7 @@ def load_models_and_scalers():
         st.warning("Please ensure 'CatboostML.modelA.cbm' is in the same directory and trained with the correct features.")
 
     try:
-        scaler_fin = joblib.load('scaler_fin.pkl')
+        scaler_fin = joblib.load('renee_scaler_financial.pkl')
         scalers['fin'] = scaler_fin
     except Exception as e:
         st.error(f"Error loading scaler_fin.pkl: {e}")
@@ -116,7 +116,7 @@ def load_models_and_scalers():
         st.warning("Please ensure 'CatboostML.modelB.cbm' is in the same directory and trained with the correct features.")
 
     try:
-        scaler_all = joblib.load('scaler_all.pkl')
+        scaler_all = joblib.load('renee_scaler_all.pkl')
         scalers['all'] = scaler_all
     except Exception as e:
         st.error(f"Error loading scaler_all.pkl: {e}")
