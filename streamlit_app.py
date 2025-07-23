@@ -209,7 +209,13 @@ def _predict_single_model(model, scaler, input_df, feature_columns, label_encode
             probabilities = model.predict_proba(scaled_data)[0]
             class_names = model.classes_ # CatBoost stores class names
         elif isinstance(model, RandomForestClassifier) or isinstance(model, xgb.XGBClassifier):
-            predicted_class_idx = model.predict(scaled_data)[0] # These return numerical label
+            raw_prediction = model.predict(scaled_data)[0]
+            # If raw_prediction is a string (e.g., 'A'), convert it to int index using label_encoder
+            if isinstance(raw_prediction, str):
+                predicted_class_idx = label_encoder.transform([raw_prediction])[0]
+            else: # Otherwise, it's already a numerical index
+                predicted_class_idx = raw_prediction
+            
             predicted_rating_str = label_encoder.inverse_transform([int(predicted_class_idx)])[0] # Convert to string
             probabilities = model.predict_proba(scaled_data)[0]
             class_names = label_encoder.classes_ # Use label encoder classes for consistency
@@ -720,4 +726,5 @@ st.button("Reset All Inputs", on_click=reset_inputs)
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant.")
+
 
