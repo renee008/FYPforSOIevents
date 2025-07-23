@@ -296,7 +296,7 @@ CREDIT_RATING_DEFINITIONS = {
 def plot_feature_contributions(model, feature_columns, model_label):
     """
     Calculates and plots global feature importances for the given model.
-    The importances are normalized to sum to 1 and the X-axis is set to 0-10.
+    The importances are normalized to sum to 1 and the X-axis is scaled to 0-10.
     """
     try:
         feature_importances = None
@@ -317,7 +317,6 @@ def plot_feature_contributions(model, feature_columns, model_label):
 
         # Normalize feature importances to sum to 1
         # This ensures all models' importances are on a comparable scale (0-1)
-        # before being plotted on the 0-10 axis.
         if np.sum(feature_importances) > 0:
             feature_importances = feature_importances / np.sum(feature_importances)
         else:
@@ -336,13 +335,21 @@ def plot_feature_contributions(model, feature_columns, model_label):
 
         fig, ax = plt.subplots(figsize=(8, max(5, len(feature_columns) * 0.3))) # Dynamic height, slightly smaller for columns
         ax.barh(importance_df['Feature'], importance_df['Importance'], color='#4CAF50') # Green bars
-        ax.set_xlabel("Normalized Feature Importance")
+        ax.set_xlabel("Scaled Feature Importance (0-10)") # Updated label
         ax.set_title(f"Overall Feature Contributions:\n{model_label}", fontsize=10) # Smaller title for columns
         
-        # Standardize X-axis to 0-10 as requested
-        ax.set_xlim(0, 1.0) # Normalized importances are 0-1, so this is the effective range
-        ax.set_xticks(np.linspace(0, 1, 6)) # Show ticks at 0, 0.2, 0.4, 0.6, 0.8, 1.0
-        ax.set_xticklabels([f'{x:.1f}' for x in np.linspace(0, 1, 6)]) # Format as 0.0, 0.2, etc.
+        # Set X-axis limits to 0-1 (actual data range)
+        ax.set_xlim(0, 1.0)
+        
+        # Set X-axis ticks and labels to 0-10
+        # Create ticks from 0.0 to 1.0 in steps of 0.1
+        display_ticks = np.arange(0, 1.1, 0.1) # 0.0, 0.1, ..., 1.0
+        # Create labels by multiplying the ticks by 10 and converting to int
+        display_labels = [f'{int(x * 10)}' for x in display_ticks]
+        
+        ax.set_xticks(display_ticks)
+        ax.set_xticklabels(display_labels)
+
 
         plt.tight_layout()
         st.pyplot(fig)
@@ -577,7 +584,7 @@ if sentiment_input_needed:
     st.info(f"VADER Compound Score: {sentiment_result['Avg_Compound']:.2f} (Positive: {sentiment_result['Avg_Positive']:.2f}, Neutral: {sentiment_result['Avg_Neutral']:.2f}, Negative: {sentiment_result['Avg_Negative']:.2f})")
 
     if sentiment_result['category'] == "Positive":
-        st.success(f"Sentiment Category: **{sentiment_result['category']}** 😊")
+        st.success(f"Sentiment Category: **{sentiment_result['category']}** �")
     elif sentiment_result['category'] == "Negative":
         st.error(f"Sentiment Category: **{sentiment_result['category']}** 😠")
     else:
@@ -655,65 +662,52 @@ if st.button(f"Predict Credit Rating(s)", key="predict_button"):
         # Display models in columns
         cols_per_row = 4
         
-        # Prepare a list to store prediction results and models for column display
-        results_for_display = []
-
-        for model_name_to_run in models_to_run:
-            model = models[model_name_to_run]
-            scaler = scalers[model_name_to_run]
-
-            is_sentiment_model = "Financial + Sentiment" in model_name_to_run
-            
-            input_df_for_prediction = current_financial_inputs_df.copy()
-            features_for_model = FINANCIAL_COLS
-
-            if is_sentiment_model:
-                all_inputs = {**st.session_state.financial_inputs, **current_sentiment_inputs_dict}
-                input_df_for_prediction = pd.DataFrame([all_inputs])
-                features_for_model = ALL_COLS
-            
-            input_df_for_prediction = input_df_for_prediction[features_for_model] # Ensure correct order
-
-            with st.spinner(f"Predicting with {model_name_to_run}..."):
-                predicted_rating, probabilities = _predict_single_model(model, scaler, input_df_for_prediction, features_for_model, label_encoder)
-                
-                results_for_display.append({
-                    "model_name": model_name_to_run,
-                    "model_obj": model,
-                    "features": features_for_model,
-                    "predicted_rating": predicted_rating,
-                    "probabilities": probabilities,
-                    "prediction_failed": (predicted_rating == "Prediction failed.")
-                })
-        
         # Now render results in columns
-        for i in range(0, len(results_for_display), cols_per_row):
+        for i in range(0, len(models_to_run), cols_per_row):
             cols = st.columns(cols_per_row)
             for j in range(cols_per_row):
-                if i + j < len(results_for_display):
-                    result_data = results_for_display[i + j]
+                if i + j < len(models_to_run):
+                    model_name_to_run = models_to_run[i + j]
+                    model = models[model_name_to_run]
+                    scaler = scalers[model_name_to_run]
+
+                    is_sentiment_model = "Financial + Sentiment" in model_name_to_run
+                    
+                    input_df_for_prediction = current_financial_inputs_df.copy()
+                    features_for_model = FINANCIAL_COLS
+
+                    if is_sentiment_model:
+                        all_inputs = {**st.session_state.financial_inputs, **current_sentiment_inputs_dict}
+                        input_df_for_prediction = pd.DataFrame([all_inputs])
+                        features_for_model = ALL_COLS
+                    
+                    input_df_for_prediction = input_df_for_prediction[features_for_model] # Ensure correct order
+
                     with cols[j]:
-                        st.subheader(f"{result_data['model_name']}")
-                        if not result_data['prediction_failed']:
-                            st.success(f"Rating: **{result_data['predicted_rating']}**")
-                            with st.popover(f"What is '{result_data['predicted_rating']}'?"):
-                                st.write(f"**{result_data['predicted_rating']}:** {CREDIT_RATING_DEFINITIONS.get(result_data['predicted_rating'], 'Definition not available.')}")
+                        st.subheader(f"{model_name_to_run}")
+                        with st.spinner(f"Predicting..."):
+                            predicted_rating, probabilities = _predict_single_model(model, scaler, input_df_for_prediction, features_for_model, label_encoder)
+                            
+                            if predicted_rating != "Prediction failed.":
+                                st.success(f"Rating: **{predicted_rating}**")
+                                with st.popover(f"What is '{predicted_rating}'?"):
+                                    st.write(f"**{predicted_rating}:** {CREDIT_RATING_DEFINITIONS.get(predicted_rating, 'Definition not available.')}")
 
-                            st.markdown("**Probabilities:**")
-                            prob_df = pd.DataFrame(result_data['probabilities'].items(), columns=['Rating', 'Probability'])
-                            prob_df['Probability'] = prob_df['Probability'].astype(float)
-                            prob_df = prob_df.sort_values(by='Probability', ascending=False)
-                            prob_df['Probability'] = prob_df['Probability'].apply(lambda x: f"{x:.2%}")
-                            st.dataframe(prob_df, hide_index=True, use_container_width=True)
+                                st.markdown("**Probabilities:**")
+                                prob_df = pd.DataFrame(probabilities.items(), columns=['Rating', 'Probability'])
+                                prob_df['Probability'] = prob_df['Probability'].astype(float)
+                                prob_df = prob_df.sort_values(by='Probability', ascending=False)
+                                prob_df['Probability'] = prob_df['Probability'].apply(lambda x: f"{x:.2%}")
+                                st.dataframe(prob_df, hide_index=True, use_container_width=True)
 
-                            st.markdown("**Feature Importance:**")
-                            plot_feature_contributions(
-                                result_data['model_obj'],
-                                result_data['features'],
-                                result_data['model_name']
-                            )
-                        else:
-                            st.error(f"Prediction failed.")
+                                st.markdown("**Feature Importance:**")
+                                plot_feature_contributions(
+                                    model,
+                                    features_for_model,
+                                    model_name_to_run
+                                )
+                            else:
+                                st.error(f"Prediction failed.")
 
 
 # --- Reset Button (placed at the bottom for accessibility) ---
@@ -722,4 +716,5 @@ st.button("Reset All Inputs", on_click=reset_inputs)
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant.")
+�
 
