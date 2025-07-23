@@ -300,6 +300,7 @@ def plot_shap_contributions(model, scaler, input_df, feature_columns, predicted_
     """
     try:
         # Ensure input_df is a DataFrame and extract values as NumPy array
+        # This is the input to the scaler
         input_data_for_scaler = input_df[feature_columns].values
         
         # Ensure input_data_for_scaler is 2D (1, n_features) before scaling
@@ -315,10 +316,15 @@ def plot_shap_contributions(model, scaler, input_df, feature_columns, predicted_
         # Explicitly convert to float32, sometimes SHAP/models prefer this
         scaled_data = scaled_data.astype(np.float32)
 
+        # Convert scaled_data back to a DataFrame with feature names for SHAP
+        # This is the data passed to the explainer
+        scaled_data_df_for_shap = pd.DataFrame(scaled_data, columns=feature_columns)
+
+
         # Debugging: Print shape and type of data just before SHAP
-        st.write(f"DEBUG: {model_label} - Type of scaled_data before SHAP: {type(scaled_data)}")
-        st.write(f"DEBUG: {model_label} - Shape of scaled_data before SHAP: {scaled_data.shape}")
-        st.write(f"DEBUG: {model_label} - Dtype of scaled_data before SHAP: {scaled_data.dtype}")
+        st.write(f"DEBUG: {model_label} - Type of data for SHAP: {type(scaled_data_df_for_shap)}")
+        st.write(f"DEBUG: {model_label} - Shape of data for SHAP: {scaled_data_df_for_shap.shape}")
+        st.write(f"DEBUG: {model_label} - Dtype of data for SHAP: {scaled_data_df_for_shap.dtypes.iloc[0]}") # Check dtype of first column
 
 
         # Initialize SHAP explainer based on model type
@@ -329,7 +335,7 @@ def plot_shap_contributions(model, scaler, input_df, feature_columns, predicted_
             st.warning(f"SHAP explanation not supported for model type: {type(model).__name__}.")
             return
 
-        shap_values = explainer.shap_values(scaled_data)
+        shap_values = explainer.shap_values(scaled_data_df_for_shap)
 
         # Determine which SHAP values to use for plotting based on predicted class
         # Always get the numerical index from the label_encoder for consistency
@@ -746,6 +752,7 @@ st.button("Reset All Inputs", on_click=reset_inputs)
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant.")
+
 
 
 
