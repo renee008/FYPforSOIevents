@@ -6,3 +6,4 @@ joblib
 nltk
 shap
 numpy
+lightgbm
