@@ -276,7 +276,7 @@ CREDIT_RATING_DEFINITIONS = {
 }
 
 # --- SHAP Explainability Function ---
-def plot_shap_contributions(model, scaler, input_df, feature_columns, predicted_rating_str, model_label):
+def plot_shap_contributions(model, scaler, input_df, feature_columns, predicted_rating_str, model_label, label_encoder):
     """
     Calculates and plots SHAP values for a single prediction.
     """
@@ -297,14 +297,15 @@ def plot_shap_contributions(model, scaler, input_df, feature_columns, predicted_
         # Determine which SHAP values to use for plotting based on predicted class
         # For multi-class, shap_values is a list of arrays (one per class).
         # We need the SHAP values for the *predicted* class.
-        if isinstance(model, CatBoostClassifier): # CatBoost model.predict returns the string label
-            try:
-                predicted_class_idx = list(model.classes_).index(predicted_rating_str)
-            except ValueError:
-                predicted_class_idx = label_encoder.transform([predicted_rating_str])[0] # Fallback to label encoder
-        else: # RandomForest, LightGBM, XGBoost (which typically output numerical indices)
-            predicted_class_idx = label_encoder.transform([predicted_rating_str])[0]
         
+        # Always get the numerical index from the label_encoder for consistency
+        # This assumes predicted_rating_str is a valid rating string (e.g., 'AAA', 'BBB')
+        try:
+            predicted_class_idx = label_encoder.transform([predicted_rating_str])[0]
+        except ValueError:
+            st.error(f"Predicted rating '{predicted_rating_str}' not found in LabelEncoder classes. Cannot generate SHAP plot for {model_label}.")
+            return
+
         # Ensure predicted_class_idx is an integer for indexing
         predicted_class_idx = int(predicted_class_idx)
 
@@ -314,7 +315,7 @@ def plot_shap_contributions(model, scaler, input_df, feature_columns, predicted_
             if predicted_class_idx < len(shap_values):
                 feature_shap_values = shap_values[predicted_class_idx][0] # Get SHAP values for the single instance of the predicted class
             else:
-                st.warning(f"Predicted class index {predicted_class_idx} out of bounds for SHAP values list (length {len(shap_values)}). Using first class SHAP values.")
+                st.warning(f"Predicted class index {predicted_class_idx} out of bounds for SHAP values list (length {len(shap_values)}). Using first class SHAP values for {model_label}.")
                 feature_shap_values = shap_values[0][0]
         else: # Binary classification or simplified multi-class (e.g., RandomForest might return 2D array directly)
             feature_shap_values = shap_values[0] # Get SHAP values for the single instance
@@ -639,14 +640,14 @@ if st.button(f"Predict Credit Rating(s)", key="predict_button"):
                 input_df_for_prediction,
                 required_features,
                 predicted_rating,
-                selected_model_name
+                selected_model_name,
+                label_encoder # Pass label_encoder here
             )
 
     else: # "All Models" options
         st.info("Running multiple models. Results will be displayed below.")
-        all_results = []
+        
         models_to_run = []
-
         if selected_model_name == "All Model A (Financial Only)":
             models_to_run = [name for name in models.keys() if "Model A" in name]
         elif selected_model_name == "All Model B (Financial + Sentiment)":
@@ -699,10 +700,11 @@ if st.button(f"Predict Credit Rating(s)", key="predict_button"):
                             input_df_for_prediction,
                             features_for_model,
                             predicted_rating,
-                            model_name_to_run
+                            model_name_to_run,
+                            label_encoder # Pass label_encoder here
                         )
                 else:
-                    st.error(f"Prediction failed for {model_name_to_run}.")
+                    st.error(f"Prediction failed for {model_name_to_run}. Please check inputs and model files.")
 
 
 # --- Reset Button (placed at the bottom for accessibility) ---
@@ -711,4 +713,3 @@ st.button("Reset All Inputs", on_click=reset_inputs)
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant.")
-
