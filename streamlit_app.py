@@ -194,11 +194,18 @@ def _predict_single_model(model, scaler, input_df, feature_columns, label_encode
     """
     try:
         input_df_reindexed = input_df[feature_columns]
+        
+        # Debugging: Check for NaNs in input_df_reindexed
+        if input_df_reindexed.isnull().any().any():
+            st.error(f"NaN values detected in input features for model {type(model).__name__}. Please check your inputs.")
+            return "Prediction failed (NaN in input).", {}
+
         scaled_data = scaler.transform(input_df_reindexed)
 
         # Handle prediction based on model type
         if isinstance(model, CatBoostClassifier):
-            predicted_rating_str = model.predict(scaled_data)[0] # CatBoost returns string directly
+            # CatBoost predict can return a 1-element array, ensure it's a string
+            predicted_rating_str = str(model.predict(scaled_data)[0])
             probabilities = model.predict_proba(scaled_data)[0]
             class_names = model.classes_ # CatBoost stores class names
         elif isinstance(model, RandomForestClassifier) or isinstance(model, xgb.XGBClassifier):
@@ -219,7 +226,7 @@ def _predict_single_model(model, scaler, input_df, feature_columns, label_encode
         return str(predicted_rating_str), probabilities_dict
 
     except Exception as e:
-        # st.error(f"Error during single model prediction: {e}") # Suppress for multi-model runs
+        st.error(f"Error during single model prediction ({type(model).__name__}): {e}")
         return "Prediction failed.", {}
 
 # --- Sentiment Analysis Function ---
@@ -284,6 +291,10 @@ def plot_shap_contributions(model, scaler, input_df, feature_columns, predicted_
         input_df_reindexed = input_df[feature_columns]
         scaled_data = scaler.transform(input_df_reindexed)
 
+        # Ensure scaled_data is 2D (1, n_features) for SHAP
+        if scaled_data.ndim == 1:
+            scaled_data = scaled_data.reshape(1, -1)
+
         # Initialize SHAP explainer based on model type
         if isinstance(model, CatBoostClassifier) or isinstance(model, RandomForestClassifier) or \
            isinstance(model, lgb.Booster) or isinstance(model, xgb.XGBClassifier):
@@ -295,15 +306,11 @@ def plot_shap_contributions(model, scaler, input_df, feature_columns, predicted_
         shap_values = explainer.shap_values(scaled_data)
 
         # Determine which SHAP values to use for plotting based on predicted class
-        # For multi-class, shap_values is a list of arrays (one per class).
-        # We need the SHAP values for the *predicted* class.
-        
         # Always get the numerical index from the label_encoder for consistency
-        # This assumes predicted_rating_str is a valid rating string (e.g., 'AAA', 'BBB')
         try:
             predicted_class_idx = label_encoder.transform([predicted_rating_str])[0]
-        except ValueError:
-            st.error(f"Predicted rating '{predicted_rating_str}' not found in LabelEncoder classes. Cannot generate SHAP plot for {model_label}.")
+        except ValueError as ve:
+            st.error(f"SHAP Error (LabelEncoder): Predicted rating '{predicted_rating_str}' not found in LabelEncoder classes. Original error: {ve}. Cannot generate SHAP plot for {model_label}.")
             return
 
         # Ensure predicted_class_idx is an integer for indexing
@@ -315,7 +322,7 @@ def plot_shap_contributions(model, scaler, input_df, feature_columns, predicted_
             if predicted_class_idx < len(shap_values):
                 feature_shap_values = shap_values[predicted_class_idx][0] # Get SHAP values for the single instance of the predicted class
             else:
-                st.warning(f"Predicted class index {predicted_class_idx} out of bounds for SHAP values list (length {len(shap_values)}). Using first class SHAP values for {model_label}.")
+                st.warning(f"SHAP Warning: Predicted class index {predicted_class_idx} out of bounds for SHAP values list (length {len(shap_values)}). Using first class SHAP values for {model_label}.")
                 feature_shap_values = shap_values[0][0]
         else: # Binary classification or simplified multi-class (e.g., RandomForest might return 2D array directly)
             feature_shap_values = shap_values[0] # Get SHAP values for the single instance
@@ -713,3 +720,4 @@ st.button("Reset All Inputs", on_click=reset_inputs)
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant.")
+
