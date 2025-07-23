@@ -3,6 +3,7 @@ import pandas as pd
 import joblib # For loading the scalers and models
 from catboost import CatBoostClassifier
 from sklearn.ensemble import RandomForestClassifier # Import RandomForestClassifier
+import lightgbm as lgb # Import LightGBM
 from nltk.sentiment.vader import SentimentIntensityAnalyzer # Import VADER
 import nltk # Import nltk
 import shap # For explainability
@@ -98,7 +99,7 @@ def load_models_and_scalers():
         cat_model_A = CatBoostClassifier()
         cat_model_A.load_model('CatboostML.modelA.cbm')
         models['CatBoost Model A (Financial Only)'] = cat_model_A
-        scalers['CatBoost Model A (Financial Only)'] = joblib.load('renee_scaler_financial.pkl')
+        scalers['CatBoost Model A (Financial Only)'] = joblib.load('renee_scaler_fin.pkl')
 
         # Load CatBoost Model B (Financial + Sentiment) and its scaler (renee_scaler_all.pkl)
         cat_model_B = CatBoostClassifier()
@@ -115,6 +116,18 @@ def load_models_and_scalers():
         rf_model_B = joblib.load('ath_modelB_randomforest.pkl')
         models['RandomForest Model B (Financial + Sentiment)'] = rf_model_B
         scalers['RandomForest Model B (Financial + Sentiment)'] = joblib.load('ath_scaler_all.pkl')
+
+        # Load LightGBM Model A (Financial Only) and its scaler (ralph_scaler_financial.pkl)
+        # LightGBM models are loaded from a text file
+        lgbm_model_A = lgb.Booster(model_file='LightGBM.modelA.txt')
+        models['LightGBM Model A (Financial Only)'] = lgbm_model_A
+        scalers['LightGBM Model A (Financial Only)'] = joblib.load('ralph_scaler_financial.pkl')
+
+        # Load LightGBM Model B (Financial + Sentiment) and its scaler (ralph_scaler_all.pkl)
+        lgbm_model_B = lgb.Booster(model_file='LightGBM.modelB.txt')
+        models['LightGBM Model B (Financial + Sentiment)'] = lgbm_model_B
+        scalers['LightGBM Model B (Financial + Sentiment)'] = joblib.load('ralph_scaler_all.pkl')
+
 
         st.success("All models and scalers loaded successfully!")
     except FileNotFoundError as e:
@@ -141,18 +154,25 @@ def predict_credit_rating(model, scaler, input_df, feature_columns) -> tuple:
         input_df_reindexed = input_df[feature_columns]
         scaled_data = scaler.transform(input_df_reindexed)
 
-        # Predict the rating
-        # CatBoost's predict returns a 2D array, RandomForest's predict returns a 1D array
-        predicted_rating = model.predict(scaled_data)
-        if isinstance(predicted_rating, np.ndarray) and predicted_rating.ndim > 0:
-            predicted_rating = predicted_rating.flatten()[0] # Get the scalar value
+        # Handle prediction based on model type
+        if isinstance(model, CatBoostClassifier) or isinstance(model, RandomForestClassifier):
+            predicted_rating = model.predict(scaled_data)
+            if isinstance(predicted_rating, np.ndarray) and predicted_rating.ndim > 0:
+                predicted_rating = predicted_rating.flatten()[0] # Get the scalar value
+            probabilities = model.predict_proba(scaled_data)[0]
+            class_names = model.classes_ if hasattr(model, 'classes_') else RATING_ORDER
+        elif isinstance(model, lgb.Booster):
+            # LightGBM predict_proba returns probabilities directly for multi-class
+            probabilities = model.predict(scaled_data)[0]
+            # For LightGBM, the predicted class is the one with the highest probability
+            predicted_class_idx = np.argmax(probabilities)
+            # LightGBM's class labels might be integers, map them back to RATING_ORDER
+            # Assuming RATING_ORDER corresponds to the integer labels 0, 1, 2...
+            predicted_rating = RATING_ORDER[predicted_class_idx]
+            class_names = RATING_ORDER # Use the predefined order for LightGBM
+        else:
+            return "Unsupported model type.", {}
 
-        # Get prediction probabilities
-        probabilities = model.predict_proba(scaled_data)[0] # Get probabilities for the single instance
-
-        # Map probabilities to class names
-        # Ensure model.classes_ is consistent with RATING_ORDER if possible
-        class_names = model.classes_ if hasattr(model, 'classes_') else RATING_ORDER
         probabilities_dict = dict(zip(class_names, probabilities))
 
         return str(predicted_rating), probabilities_dict
@@ -223,18 +243,31 @@ def plot_shap_contributions(model, scaler, input_df, feature_columns, predicted_
         input_df_reindexed = input_df[feature_columns]
         scaled_data = scaler.transform(input_df_reindexed)
 
-        # Initialize SHAP explainer
-        explainer = shap.TreeExplainer(model)
+        # Initialize SHAP explainer based on model type
+        if isinstance(model, CatBoostClassifier) or isinstance(model, RandomForestClassifier) or isinstance(model, lgb.Booster):
+            explainer = shap.TreeExplainer(model)
+        else:
+            st.warning("SHAP explanation not supported for this model type.")
+            return
+
         shap_values = explainer.shap_values(scaled_data)
 
         # Determine which SHAP values to use for plotting based on predicted class
-        if isinstance(shap_values, list): # Multi-class output (e.g., CatBoost or some RandomForest setups)
+        if isinstance(shap_values, list): # Multi-class output (e.g., CatBoost, LightGBM, or some RandomForest setups)
             # Find the index of the predicted class in the model's classes_ array
+            # LightGBM does not have model.classes_ directly, so we rely on RATING_ORDER
             if hasattr(model, 'classes_'):
                 try:
                     predicted_class_idx = list(model.classes_).index(predicted_rating_str)
                 except ValueError:
                     st.warning(f"Predicted class '{predicted_rating_str}' not found in model.classes_ for SHAP explanation. Using average SHAP values.")
+                    predicted_class_idx = 0 # Fallback to first class index
+            elif isinstance(model, lgb.Booster):
+                 # For LightGBM, map predicted_rating_str to its index in RATING_ORDER
+                try:
+                    predicted_class_idx = RATING_ORDER.index(predicted_rating_str)
+                except ValueError:
+                    st.warning(f"Predicted class '{predicted_rating_str}' not found in RATING_ORDER for SHAP explanation. Using first class SHAP values.")
                     predicted_class_idx = 0 # Fallback to first class index
             else: # Fallback if model.classes_ is not available (e.g., some custom RF setups)
                 st.warning("Model classes not found for precise SHAP explanation. Using first class SHAP values.")
@@ -246,9 +279,15 @@ def plot_shap_contributions(model, scaler, input_df, feature_columns, predicted_
             shap_values_for_plot = shap_values[0] # Get SHAP values for the single instance
 
         # Create a SHAP Explanation object for plotting
+        # Handle expected_value for different model types
+        if isinstance(explainer.expected_value, np.ndarray) and isinstance(shap_values, list):
+            base_value = explainer.expected_value[predicted_class_idx]
+        else:
+            base_value = explainer.expected_value
+
         shap_explanation = shap.Explanation(
             values=shap_values_for_plot,
-            base_values=explainer.expected_value[predicted_class_idx] if isinstance(explainer.expected_value, np.ndarray) and isinstance(shap_values, list) else explainer.expected_value,
+            base_values=base_value,
             data=input_df_reindexed.iloc[0].values, # Use the original input data for plotting
             feature_names=feature_columns
         )
@@ -354,18 +393,20 @@ with tab_about:
     * **Financial Metrics (Quantitative):** This involves analyzing a company's balance sheet, income statement, and cash flow statement. Key ratios like liquidity (e.g., current ratio), profitability (e.g., gross profit margin), leverage (e.g., debt ratio), and efficiency (e.g., days of sales outstanding) are vital.
     * **News Sentiment (Qualitative):** Public sentiment and news coverage can significantly impact a company's perceived risk. Positive news might signal stability and growth, while negative news could indicate potential challenges.
 
-    This application uses four machine learning models:
+    This application uses six machine learning models:
     * **CatBoost Model A (Financial Only):** Predicts credit ratings based solely on a set of key financial metrics using a CatBoost Classifier.
     * **CatBoost Model B (Financial + Sentiment):** Combines financial metrics with sentiment analysis from news articles using a CatBoost Classifier.
     * **RandomForest Model A (Financial Only):** Predicts credit ratings based solely on a set of key financial metrics using a RandomForest Classifier.
     * **RandomForest Model B (Financial + Sentiment):** Combines financial metrics with sentiment analysis from news articles using a RandomForest Classifier.
+    * **LightGBM Model A (Financial Only):** Predicts credit ratings based solely on a set of key financial metrics using a LightGBM Classifier.
+    * **LightGBM Model B (Financial + Sentiment):** Combines financial metrics with sentiment analysis from news articles using a LightGBM Classifier.
     """)
 
 with tab_how_to_use:
     st.markdown("""
     ### How to Use This Website
     1.  **Enter Company Name:** Provide the name of the company you are analyzing.
-    2.  **Select a Model:** Choose one of the four available models from the dropdown.
+    2.  **Select a Model:** Choose one of the six available models from the dropdown.
     3.  **Input Financial Metrics:** Fill in the values for the various financial ratios. Enter percentage-like metrics (e.g., margins, returns) as decimals (e.g., `0.10` for 10%).
     4.  **Enter News Article (for Model B types):** If you select a "Financial + Sentiment" model (Model B), provide a relevant news article.
     5.  **Predict:** Click the "Predict Credit Rating" button to get a prediction and feature contributions.
