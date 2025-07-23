@@ -320,13 +320,6 @@ def plot_shap_contributions(model, scaler, input_df, feature_columns, predicted_
         # This is the data passed to the explainer
         scaled_data_df_for_shap = pd.DataFrame(scaled_data, columns=feature_columns)
 
-
-        # Debugging: Print shape and type of data just before SHAP
-        st.write(f"DEBUG: {model_label} - Type of data for SHAP: {type(scaled_data_df_for_shap)}")
-        st.write(f"DEBUG: {model_label} - Shape of data for SHAP: {scaled_data_df_for_shap.shape}")
-        st.write(f"DEBUG: {model_label} - Dtype of data for SHAP: {scaled_data_df_for_shap.dtypes.iloc[0]}") # Check dtype of first column
-
-
         # Initialize SHAP explainer based on model type
         if isinstance(model, CatBoostClassifier) or isinstance(model, RandomForestClassifier) or \
            isinstance(model, lgb.Booster) or isinstance(model, xgb.XGBClassifier):
@@ -335,6 +328,7 @@ def plot_shap_contributions(model, scaler, input_df, feature_columns, predicted_
             st.warning(f"SHAP explanation not supported for model type: {type(model).__name__}.")
             return
 
+        # Pass the DataFrame to shap_values
         shap_values = explainer.shap_values(scaled_data_df_for_shap)
 
         # Determine which SHAP values to use for plotting based on predicted class
@@ -752,6 +746,7 @@ st.button("Reset All Inputs", on_click=reset_inputs)
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant.")
+
 
 
 
