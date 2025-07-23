@@ -7,9 +7,8 @@ import lightgbm as lgb # Import LightGBM
 import xgboost as xgb # Import XGBoost
 from nltk.sentiment.vader import SentimentIntensityAnalyzer # Import VADER
 import nltk # Import nltk
-import shap # For explainability
 import numpy as np # Import numpy for array handling
-import matplotlib.pyplot as plt # For plotting SHAP contributions
+import matplotlib.pyplot as plt # For plotting contributions
 
 # --- Custom CSS for Styling ---
 st.markdown(
@@ -28,7 +27,7 @@ st.markdown(
     }
     .stButton>button:hover {
         transform: translateY(-2px);
-        box-shadow: 4px 4px 10px rgba(0,0,0,0.3);
+        box-shadow: 4px 44px 10px rgba(0,0,0,0.3);
     }
     .stTextInput>div>div>input, .stTextArea>div>div>textarea {
         border-radius: 8px;
@@ -293,97 +292,54 @@ CREDIT_RATING_DEFINITIONS = {
     'D': "Default. The company has defaulted on its financial obligations."
 }
 
-# --- SHAP Explainability Function ---
-def plot_shap_contributions(model, scaler, input_df, feature_columns, predicted_rating_str, model_label, label_encoder):
+# --- Feature Importance Plotting Function ---
+def plot_feature_contributions(model, feature_columns, model_label):
     """
-    Calculates and plots SHAP values for a single prediction.
+    Calculates and plots global feature importances for the given model.
     """
     try:
-        # Ensure input_df is a DataFrame and extract values as NumPy array
-        # This is the input to the scaler
-        input_data_for_scaler = input_df[feature_columns].values
+        feature_importances = None
         
-        # Ensure input_data_for_scaler is 2D (1, n_features) before scaling
-        if input_data_for_scaler.ndim == 1:
-            input_data_for_scaler = input_data_for_scaler.reshape(1, -1)
-
-        scaled_data = scaler.transform(input_data_for_scaler)
-
-        # Ensure scaled_data is 2D (1, n_features) for SHAP, even after scaling
-        if scaled_data.ndim == 1:
-            scaled_data = scaled_data.reshape(1, -1)
-        
-        # Explicitly convert to float32, sometimes SHAP/models prefer this
-        scaled_data = scaled_data.astype(np.float32)
-
-        # Convert scaled_data back to a DataFrame with feature names for SHAP
-        # This is the data passed to the explainer
-        scaled_data_df_for_shap = pd.DataFrame(scaled_data, columns=feature_columns)
-
-        # Initialize SHAP explainer based on model type
-        if isinstance(model, CatBoostClassifier) or isinstance(model, RandomForestClassifier) or \
-           isinstance(model, lgb.Booster) or isinstance(model, xgb.XGBClassifier):
-            explainer = shap.TreeExplainer(model)
+        if isinstance(model, CatBoostClassifier):
+            feature_importances = model.get_feature_importance()
+        elif isinstance(model, RandomForestClassifier) or isinstance(model, xgb.XGBClassifier):
+            feature_importances = model.feature_importances_
+        elif isinstance(model, lgb.Booster):
+            feature_importances = model.feature_importance()
         else:
-            st.warning(f"SHAP explanation not supported for model type: {type(model).__name__}.")
+            st.warning(f"Feature importance plotting not supported for model type: {type(model).__name__}.")
             return
 
-        # Pass the DataFrame to shap_values
-        shap_values = explainer.shap_values(scaled_data_df_for_shap)
-
-        # Determine which SHAP values to use for plotting based on predicted class
-        # Always get the numerical index from the label_encoder for consistency
-        try:
-            predicted_class_idx = label_encoder.transform([predicted_rating_str])[0]
-        except ValueError as ve:
-            st.error(f"SHAP Error (LabelEncoder): Predicted rating '{predicted_rating_str}' not found in LabelEncoder classes. Original error: {ve}. Cannot generate SHAP plot for {model_label}.")
+        if feature_importances is None or len(feature_importances) == 0:
+            st.info(f"Could not retrieve feature importances for {model_label}.")
             return
 
-        # Ensure predicted_class_idx is an integer for indexing
-        predicted_class_idx = int(predicted_class_idx)
-
-        # Handle cases where shap_values might not be a list (e.g., binary classification or simplified output)
-        if isinstance(shap_values, list):
-            # Make sure the index is within bounds
-            if predicted_class_idx < len(shap_values):
-                feature_shap_values = shap_values[predicted_class_idx][0] # Get SHAP values for the single instance of the predicted class
-            else:
-                st.warning(f"SHAP Warning: Predicted class index {predicted_class_idx} out of bounds for SHAP values list (length {len(shap_values)}). Using first class SHAP values for {model_label}.")
-                feature_shap_values = shap_values[0][0]
-        else: # Binary classification or simplified multi-class (e.g., RandomForest might return 2D array directly)
-            feature_shap_values = shap_values[0] # Get SHAP values for the single instance
-
-
-        # Create a DataFrame for SHAP values for plotting
-        shap_df = pd.DataFrame({
+        # Create a DataFrame for feature importances
+        importance_df = pd.DataFrame({
             'Feature': feature_columns,
-            'SHAP Value': feature_shap_values
+            'Importance': feature_importances
         })
-        shap_df['Direction'] = shap_df['SHAP Value'].apply(lambda x: 'positive' if x > 0 else 'negative')
-        # Sort by absolute SHAP value for better visualization
-        shap_df['Abs_SHAP'] = shap_df['SHAP Value'].abs()
-        shap_df = shap_df.sort_values(by='Abs_SHAP', ascending=True) # Ascending for horizontal bar chart
+        
+        # Sort by importance for better visualization
+        importance_df = importance_df.sort_values(by='Importance', ascending=True)
 
         fig, ax = plt.subplots(figsize=(10, max(6, len(feature_columns) * 0.4))) # Dynamic height
-        colors = ['#ef5350' if d == 'negative' else '#66bb6a' for d in shap_df['Direction']] # Red for negative, green for positive
-        ax.barh(shap_df['Feature'], shap_df['SHAP Value'], color=colors)
-        ax.set_xlabel("SHAP Value (Impact on Prediction)")
-        ax.set_title(f"Feature Contributions for Predicted Rating: {predicted_rating_str} ({model_label})")
+        ax.barh(importance_df['Feature'], importance_df['Importance'], color='#4CAF50') # Green bars
+        ax.set_xlabel("Feature Importance (Overall Impact)")
+        ax.set_title(f"Overall Feature Contributions: {model_label}")
         plt.tight_layout()
         st.pyplot(fig)
         plt.close(fig) # Close the figure to free memory
 
         st.markdown("""
         <p style='font-size: 0.9em; color: gray;'>
-        * **Green bars** indicate features that pushed the prediction towards the predicted rating.
-        * **Red bars** indicate features that pushed the prediction away from the predicted rating.
+        * This chart shows the **overall importance** of each feature to the model's predictions across the entire dataset.
+        * Higher importance means the feature was more influential in the model's decision-making process.
         </p>
         """, unsafe_allow_html=True)
 
-
     except Exception as e:
-        st.error(f"Could not generate SHAP plot for {model_label}: {e}. This might happen if the model or data structure is not fully compatible with SHAP's TreeExplainer or if there's an issue with the input data.")
-        st.info("Ensure the model was trained with the same feature names and order, and that the SHAP library is compatible with your model version.")
+        st.error(f"Could not generate Feature Importance plot for {model_label}: {e}. Ensure the model object has a 'feature_importances_' attribute or a 'get_feature_importance()' method.")
 
 
 # --- Default Values and Ranges for Inputs ---
@@ -664,17 +620,12 @@ if st.button(f"Predict Credit Rating(s)", key="predict_button"):
             st.dataframe(prob_df, hide_index=True, use_container_width=True)
 
             st.write("---")
-            st.subheader("Key Feature Contributions (SHAP Values):")
-            st.markdown("*(Green bars indicate a positive contribution to the predicted rating; red bars indicate a negative contribution.)*")
+            st.subheader("Key Feature Contributions (Overall Importance):")
             
-            plot_shap_contributions(
+            plot_feature_contributions(
                 selected_model,
-                selected_scaler,
-                input_df_for_prediction,
                 required_features,
-                predicted_rating,
-                selected_model_name,
-                label_encoder # Pass label_encoder here
+                selected_model_name
             )
 
     else: # "All Models" options
@@ -725,16 +676,11 @@ if st.button(f"Predict Credit Rating(s)", key="predict_button"):
                         st.dataframe(prob_df, hide_index=True, use_container_width=True)
 
                         st.write("---")
-                        st.subheader("Key Feature Contributions (SHAP Values):")
-                        st.markdown("*(Green bars indicate a positive contribution to the predicted rating; red bars indicate a negative contribution.)*")
-                        plot_shap_contributions(
+                        st.subheader("Key Feature Contributions (Overall Importance):")
+                        plot_feature_contributions(
                             model,
-                            scaler,
-                            input_df_for_prediction,
                             features_for_model,
-                            predicted_rating,
-                            model_name_to_run,
-                            label_encoder # Pass label_encoder here
+                            model_name_to_run
                         )
                 else:
                     st.error(f"Prediction failed for {model_name_to_run}. Please check inputs and model files.")
@@ -746,10 +692,3 @@ st.button("Reset All Inputs", on_click=reset_inputs)
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant.")
-
-
-
-
-
-
-
