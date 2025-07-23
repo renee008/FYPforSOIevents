@@ -316,18 +316,20 @@ def plot_feature_contributions(model, feature_columns, model_label):
             return
 
         # Normalize feature importances to sum to 1
-        # This ensures all models' importances are on a comparable scale (0-1)
         if np.sum(feature_importances) > 0:
             feature_importances = feature_importances / np.sum(feature_importances)
         else:
             st.warning(f"Sum of feature importances is zero for {model_label}. Cannot normalize.")
             return
 
+        # Scale normalized importances to a 0-10 range for display
+        scaled_importances = feature_importances * 10
+
 
         # Create a DataFrame for feature importances
         importance_df = pd.DataFrame({
             'Feature': feature_columns,
-            'Importance': feature_importances
+            'Importance': scaled_importances # Use scaled importances for plotting
         })
         
         # Sort by importance for better visualization
@@ -338,18 +340,12 @@ def plot_feature_contributions(model, feature_columns, model_label):
         ax.set_xlabel("Scaled Feature Importance (0-10)") # Updated label
         ax.set_title(f"Overall Feature Contributions:\n{model_label}", fontsize=10) # Smaller title for columns
         
-        # Set X-axis limits to 0-1 (actual data range)
-        ax.set_xlim(0, 1.0)
+        # Set X-axis limits to 0-10
+        ax.set_xlim(0, 10)
         
-        # Set X-axis ticks and labels to 0-10
-        # Create ticks from 0.0 to 1.0 in steps of 0.1
-        display_ticks = np.arange(0, 1.1, 0.1) # 0.0, 0.1, ..., 1.0
-        # Create labels by multiplying the ticks by 10 and converting to int
-        display_labels = [f'{int(x * 10)}' for x in display_ticks]
-        
-        ax.set_xticks(display_ticks)
-        ax.set_xticklabels(display_labels)
-
+        # Set X-axis ticks and labels to 0-10 (integers)
+        ax.set_xticks(np.arange(0, 11, 1)) # Ticks from 0 to 10, step 1
+        ax.set_xticklabels([str(int(x)) for x in np.arange(0, 11, 1)]) # Labels as integers
 
         plt.tight_layout()
         st.pyplot(fig)
@@ -584,7 +580,7 @@ if sentiment_input_needed:
     st.info(f"VADER Compound Score: {sentiment_result['Avg_Compound']:.2f} (Positive: {sentiment_result['Avg_Positive']:.2f}, Neutral: {sentiment_result['Avg_Neutral']:.2f}, Negative: {sentiment_result['Avg_Negative']:.2f})")
 
     if sentiment_result['category'] == "Positive":
-        st.success(f"Sentiment Category: **{sentiment_result['category']}** �")
+        st.success(f"Sentiment Category: **{sentiment_result['category']}** 😊")
     elif sentiment_result['category'] == "Negative":
         st.error(f"Sentiment Category: **{sentiment_result['category']}** 😠")
     else:
@@ -716,5 +712,6 @@ st.button("Reset All Inputs", on_click=reset_inputs)
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant.")
+
 
 
