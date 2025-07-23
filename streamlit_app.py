@@ -4,6 +4,7 @@ import joblib # For loading the scalers and models
 from catboost import CatBoostClassifier
 from sklearn.ensemble import RandomForestClassifier # Import RandomForestClassifier
 import lightgbm as lgb # Import LightGBM
+import xgboost as xgb # Import XGBoost
 from nltk.sentiment.vader import SentimentIntensityAnalyzer # Import VADER
 import nltk # Import nltk
 import shap # For explainability
@@ -27,7 +28,7 @@ st.markdown(
     }
     .stButton>button:hover {
         transform: translateY(-2px);
-        box_shadow: 4px 4px 10px rgba(0,0,0,0.3);
+        box-shadow: 4px 4px 10px rgba(0,0,0,0.3);
     }
     .stTextInput>div>div>input, .stTextArea>div>div>textarea {
         border-radius: 8px;
@@ -93,9 +94,10 @@ RATING_ORDER = ['AAA', 'AA', 'A', 'BBB', 'BB', 'B', 'CCC', 'CC', 'C', 'D']
 def load_models_and_scalers():
     models = {}
     scalers = {}
+    label_encoder = None # Initialize label_encoder here
 
     try:
-        # Load CatBoost Model A (Financial Only) and its scaler (renee_scaler_fin.pkl)
+        # Load CatBoost Model A (Financial Only) and its scaler (renee_scaler_financial.pkl)
         cat_model_A = CatBoostClassifier()
         cat_model_A.load_model('CatboostML.modelA.cbm')
         models['CatBoost Model A (Financial Only)'] = cat_model_A
@@ -118,7 +120,6 @@ def load_models_and_scalers():
         scalers['RandomForest Model B (Financial + Sentiment)'] = joblib.load('ath_scaler_all.pkl')
 
         # Load LightGBM Model A (Financial Only) and its scaler (ralph_scaler_financial.pkl)
-        # LightGBM models are loaded from a text file
         lgbm_model_A = lgb.Booster(model_file='LightGBM.modelA.txt')
         models['LightGBM Model A (Financial Only)'] = lgbm_model_A
         scalers['LightGBM Model A (Financial Only)'] = joblib.load('ralph_scaler_financial.pkl')
@@ -128,6 +129,19 @@ def load_models_and_scalers():
         models['LightGBM Model B (Financial + Sentiment)'] = lgbm_model_B
         scalers['LightGBM Model B (Financial + Sentiment)'] = joblib.load('ralph_scaler_all.pkl')
 
+        # Load XGBoost Model A (Financial Only) and its scaler (yu_pin_scaler_financial.pkl)
+        xgb_model_A = joblib.load('xgb_model_A_financial.pkl')
+        models['XGBoost Model A (Financial Only)'] = xgb_model_A
+        scalers['XGBoost Model A (Financial Only)'] = joblib.load('yu_pin_scaler_financial.pkl')
+
+        # Load XGBoost Model B (Financial + Sentiment) and its scaler (yu_pin_scaler_all.pkl)
+        xgb_model_B = joblib.load('xgb_model_B_financial_sentiment.pkl')
+        models['XGBoost Model B (Financial + Sentiment)'] = xgb_model_B
+        scalers['XGBoost Model B (Financial + Sentiment)'] = joblib.load('yu_pin_scaler_all.pkl')
+
+        # Load the LabelEncoder for credit ratings (used by XGBoost, RandomForest, LightGBM)
+        label_encoder = joblib.load('rating_label_encoder.pkl')
+
 
         st.success("All models and scalers loaded successfully!")
     except FileNotFoundError as e:
@@ -136,46 +150,50 @@ def load_models_and_scalers():
     except Exception as e:
         st.error(f"An unexpected error occurred while loading models: {e}")
         st.stop()
-    return models, scalers
+    return models, scalers, label_encoder
 
 # Load models and scalers at the start of the app
-models, scalers = load_models_and_scalers()
+models, scalers, label_encoder = load_models_and_scalers()
 
 # --- Prediction Function ---
-def predict_credit_rating(model, scaler, input_df, feature_columns) -> tuple:
+def predict_credit_rating(model, scaler, input_df, feature_columns, label_encoder) -> tuple:
     """
     Predicts the credit rating and its probabilities using the given model and scaler.
     Returns (predicted_rating, probabilities_dict).
     """
-    if model is None or scaler is None:
-        return "Model or scaler not loaded. Cannot predict credit rating.", {}
+    if model is None or scaler is None or label_encoder is None:
+        return "Model, scaler, or label encoder not loaded. Cannot predict credit rating.", {}
 
     try:
         input_df_reindexed = input_df[feature_columns]
         scaled_data = scaler.transform(input_df_reindexed)
 
         # Handle prediction based on model type
-        if isinstance(model, CatBoostClassifier) or isinstance(model, RandomForestClassifier):
-            predicted_rating = model.predict(scaled_data)
-            if isinstance(predicted_rating, np.ndarray) and predicted_rating.ndim > 0:
-                predicted_rating = predicted_rating.flatten()[0] # Get the scalar value
+        if isinstance(model, CatBoostClassifier):
+            predicted_rating_str = model.predict(scaled_data)[0] # CatBoost returns string directly
             probabilities = model.predict_proba(scaled_data)[0]
-            class_names = model.classes_ if hasattr(model, 'classes_') else RATING_ORDER
+            class_names = model.classes_ # CatBoost stores class names
+        elif isinstance(model, RandomForestClassifier):
+            predicted_class_idx = model.predict(scaled_data)[0] # RandomForest returns numerical label
+            predicted_rating_str = label_encoder.inverse_transform([int(predicted_class_idx)])[0] # Convert to string
+            probabilities = model.predict_proba(scaled_data)[0]
+            class_names = label_encoder.classes_ # Use label encoder classes for consistency
         elif isinstance(model, lgb.Booster):
-            # LightGBM predict_proba returns probabilities directly for multi-class
             probabilities = model.predict(scaled_data)[0]
-            # For LightGBM, the predicted class is the one with the highest probability
             predicted_class_idx = np.argmax(probabilities)
-            # LightGBM's class labels might be integers, map them back to RATING_ORDER
-            # Assuming RATING_ORDER corresponds to the integer labels 0, 1, 2...
-            predicted_rating = RATING_ORDER[predicted_class_idx]
-            class_names = RATING_ORDER # Use the predefined order for LightGBM
+            predicted_rating_str = label_encoder.inverse_transform([predicted_class_idx])[0]
+            class_names = label_encoder.classes_ # Use label encoder classes for consistency
+        elif isinstance(model, xgb.XGBClassifier):
+            predicted_class_idx = model.predict(scaled_data)[0] # XGBoost returns numerical label
+            predicted_rating_str = label_encoder.inverse_transform([int(predicted_class_idx)])[0] # Convert to string
+            probabilities = model.predict_proba(scaled_data)[0]
+            class_names = label_encoder.classes_ # Use label encoder classes for consistency
         else:
             return "Unsupported model type.", {}
 
         probabilities_dict = dict(zip(class_names, probabilities))
 
-        return str(predicted_rating), probabilities_dict
+        return str(predicted_rating_str), probabilities_dict
 
     except Exception as e:
         st.error(f"Error during credit rating prediction: {e}")
@@ -204,9 +222,9 @@ def analyze_sentiment(news_article: str) -> dict:
         else:
             category = "Neutral"
 
-        avg_positive_flag = 1.0 if compound_score >= 0.05 else 0.0
-        avg_neutral_flag = 1.0 if -0.05 < compound_score < 0.05 else 0.0
-        avg_negative_flag = 1.0 if compound_score <= -0.05 else 0.0
+        avg_positive_flag = vs['pos'] # Use actual pos score
+        avg_neutral_flag = vs['neu'] # Use actual neu score
+        avg_negative_flag = vs['neg'] # Use actual neg score
 
         return {'polarity': compound_score,
                 'subjectivity': 0.0,
@@ -244,7 +262,8 @@ def plot_shap_contributions(model, scaler, input_df, feature_columns, predicted_
         scaled_data = scaler.transform(input_df_reindexed)
 
         # Initialize SHAP explainer based on model type
-        if isinstance(model, CatBoostClassifier) or isinstance(model, RandomForestClassifier) or isinstance(model, lgb.Booster):
+        if isinstance(model, CatBoostClassifier) or isinstance(model, RandomForestClassifier) or \
+           isinstance(model, lgb.Booster) or isinstance(model, xgb.XGBClassifier):
             explainer = shap.TreeExplainer(model)
         else:
             st.warning("SHAP explanation not supported for this model type.")
@@ -253,53 +272,66 @@ def plot_shap_contributions(model, scaler, input_df, feature_columns, predicted_
         shap_values = explainer.shap_values(scaled_data)
 
         # Determine which SHAP values to use for plotting based on predicted class
-        if isinstance(shap_values, list): # Multi-class output (e.g., CatBoost, LightGBM, or some RandomForest setups)
-            # Find the index of the predicted class in the model's classes_ array
-            # LightGBM does not have model.classes_ directly, so we rely on RATING_ORDER
-            if hasattr(model, 'classes_'):
+        # For multi-class, shap_values is a list of arrays (one per class).
+        # We need the SHAP values for the *predicted* class.
+        if isinstance(model, CatBoostClassifier) or isinstance(model, RandomForestClassifier) or \
+           isinstance(model, lgb.Booster) or isinstance(model, xgb.XGBClassifier):
+            # For these tree-based models, if they output numerical labels, use label_encoder
+            # If CatBoost outputs string labels directly, its .classes_ will match
+            if hasattr(model, 'classes_'): # CatBoost, RandomForest
                 try:
                     predicted_class_idx = list(model.classes_).index(predicted_rating_str)
                 except ValueError:
-                    st.warning(f"Predicted class '{predicted_rating_str}' not found in model.classes_ for SHAP explanation. Using average SHAP values.")
-                    predicted_class_idx = 0 # Fallback to first class index
-            elif isinstance(model, lgb.Booster):
-                 # For LightGBM, map predicted_rating_str to its index in RATING_ORDER
-                try:
-                    predicted_class_idx = RATING_ORDER.index(predicted_rating_str)
-                except ValueError:
-                    st.warning(f"Predicted class '{predicted_rating_str}' not found in RATING_ORDER for SHAP explanation. Using first class SHAP values.")
-                    predicted_class_idx = 0 # Fallback to first class index
-            else: # Fallback if model.classes_ is not available (e.g., some custom RF setups)
-                st.warning("Model classes not found for precise SHAP explanation. Using first class SHAP values.")
-                predicted_class_idx = 0 # Default to first class's explanation
-
-            shap_values_for_plot = shap_values[predicted_class_idx][0] # Get SHAP values for the single instance of the predicted class
-
-        else: # Binary classification or simplified multi-class (e.g., RandomForest might return 2D array directly)
-            shap_values_for_plot = shap_values[0] # Get SHAP values for the single instance
-
-        # Create a SHAP Explanation object for plotting
-        # Handle expected_value for different model types
-        if isinstance(explainer.expected_value, np.ndarray) and isinstance(shap_values, list):
-            base_value = explainer.expected_value[predicted_class_idx]
+                    # Fallback for models where classes_ might not directly contain the string,
+                    # but label_encoder is the source of truth for numerical mapping.
+                    predicted_class_idx = label_encoder.transform([predicted_rating_str])[0]
+            else: # LightGBM, XGBoost (which typically output numerical indices)
+                predicted_class_idx = label_encoder.transform([predicted_rating_str])[0]
         else:
-            base_value = explainer.expected_value
+            st.warning("Could not determine predicted class index for SHAP explanation. Using first class SHAP values.")
+            predicted_class_idx = 0
 
-        shap_explanation = shap.Explanation(
-            values=shap_values_for_plot,
-            base_values=base_value,
-            data=input_df_reindexed.iloc[0].values, # Use the original input data for plotting
-            feature_names=feature_columns
-        )
+        # Ensure predicted_class_idx is an integer for indexing
+        predicted_class_idx = int(predicted_class_idx)
 
-        # Generate the SHAP summary plot (bar plot for single instance)
-        fig, ax = plt.subplots(figsize=(10, len(feature_columns) * 0.4 + 2)) # Dynamic height
-        shap.summary_plot(shap_values_for_plot, input_df_reindexed, feature_names=feature_columns, plot_type="bar", show=False, color='#2ca02c') # Green color
-        ax.set_title(f"Feature Contributions for Predicted Rating: {predicted_rating_str}")
+        # Handle cases where shap_values might not be a list (e.g., binary classification or simplified output)
+        if isinstance(shap_values, list):
+            # Make sure the index is within bounds
+            if predicted_class_idx < len(shap_values):
+                feature_shap_values = shap_values[predicted_class_idx][0] # Get SHAP values for the single instance of the predicted class
+            else:
+                st.warning(f"Predicted class index {predicted_class_idx} out of bounds for SHAP values list (length {len(shap_values)}). Using first class SHAP values.")
+                feature_shap_values = shap_values[0][0]
+        else: # Binary classification or simplified multi-class (e.g., RandomForest might return 2D array directly)
+            feature_shap_values = shap_values[0] # Get SHAP values for the single instance
+
+
+        # Create a DataFrame for SHAP values for plotting
+        shap_df = pd.DataFrame({
+            'Feature': feature_columns,
+            'SHAP Value': feature_shap_values
+        })
+        shap_df['Direction'] = shap_df['SHAP Value'].apply(lambda x: 'positive' if x > 0 else 'negative')
+        # Sort by absolute SHAP value for better visualization
+        shap_df['Abs_SHAP'] = shap_df['SHAP Value'].abs()
+        shap_df = shap_df.sort_values(by='Abs_SHAP', ascending=True) # Ascending for horizontal bar chart
+
+        fig, ax = plt.subplots(figsize=(10, max(6, len(feature_columns) * 0.4))) # Dynamic height
+        colors = ['#ef5350' if d == 'negative' else '#66bb6a' for d in shap_df['Direction']] # Red for negative, green for positive
+        ax.barh(shap_df['Feature'], shap_df['SHAP Value'], color=colors)
         ax.set_xlabel("SHAP Value (Impact on Prediction)")
+        ax.set_title(f"Feature Contributions for Predicted Rating: {predicted_rating_str}")
         plt.tight_layout()
         st.pyplot(fig)
         plt.close(fig) # Close the figure to free memory
+
+        st.markdown("""
+        <p style='font-size: 0.9em; color: gray;'>
+        * **Green bars** indicate features that pushed the prediction towards the predicted rating.
+        * **Red bars** indicate features that pushed the prediction away from the predicted rating.
+        </p>
+        """, unsafe_allow_html=True)
+
 
     except Exception as e:
         st.error(f"Could not generate SHAP plot: {e}. This might happen if the model or data structure is not fully compatible with SHAP's TreeExplainer or if there's an issue with the input data.")
@@ -393,20 +425,22 @@ with tab_about:
     * **Financial Metrics (Quantitative):** This involves analyzing a company's balance sheet, income statement, and cash flow statement. Key ratios like liquidity (e.g., current ratio), profitability (e.g., gross profit margin), leverage (e.g., debt ratio), and efficiency (e.g., days of sales outstanding) are vital.
     * **News Sentiment (Qualitative):** Public sentiment and news coverage can significantly impact a company's perceived risk. Positive news might signal stability and growth, while negative news could indicate potential challenges.
 
-    This application uses six machine learning models:
+    This application uses eight machine learning models:
     * **CatBoost Model A (Financial Only):** Predicts credit ratings based solely on a set of key financial metrics using a CatBoost Classifier.
     * **CatBoost Model B (Financial + Sentiment):** Combines financial metrics with sentiment analysis from news articles using a CatBoost Classifier.
     * **RandomForest Model A (Financial Only):** Predicts credit ratings based solely on a set of key financial metrics using a RandomForest Classifier.
     * **RandomForest Model B (Financial + Sentiment):** Combines financial metrics with sentiment analysis from news articles using a RandomForest Classifier.
     * **LightGBM Model A (Financial Only):** Predicts credit ratings based solely on a set of key financial metrics using a LightGBM Classifier.
     * **LightGBM Model B (Financial + Sentiment):** Combines financial metrics with sentiment analysis from news articles using a LightGBM Classifier.
+    * **XGBoost Model A (Financial Only):** Predicts credit ratings based solely on a set of key financial metrics using an XGBoost Classifier.
+    * **XGBoost Model B (Financial + Sentiment):** Combines financial metrics with sentiment analysis from news articles using an XGBoost Classifier.
     """)
 
 with tab_how_to_use:
     st.markdown("""
     ### How to Use This Website
     1.  **Enter Company Name:** Provide the name of the company you are analyzing.
-    2.  **Select a Model:** Choose one of the six available models from the dropdown.
+    2.  **Select a Model:** Choose one of the eight available models from the dropdown.
     3.  **Input Financial Metrics:** Fill in the values for the various financial ratios. Enter percentage-like metrics (e.g., margins, returns) as decimals (e.g., `0.10` for 10%).
     4.  **Enter News Article (for Model B types):** If you select a "Financial + Sentiment" model (Model B), provide a relevant news article.
     5.  **Predict:** Click the "Predict Credit Rating" button to get a prediction and feature contributions.
@@ -426,7 +460,7 @@ st.markdown("---")
 st.header("Select Prediction Model")
 selected_model_name = st.selectbox(
     "Choose a model for prediction:",
-    list(models.keys()),
+    list(models.keys()), # This will list all eight models
     key="model_selector"
 )
 selected_model = models[selected_model_name]
@@ -458,7 +492,7 @@ for i, col_name in enumerate(FINANCIAL_COLS): # Always show all financial inputs
         # Add a note for percentage-like metrics
         if 'Margin' in col_name or 'ReturnOn' in col_name or 'TaxRate' in col_name or 'Ratio' in col_name:
             st.caption("Enter as decimal (e.g., 0.1 for 10%)")
-
+        
         # Add a tooltip/help text for each metric
         metric_help_text = {
             'currentRatio': 'Measures short-term liquidity: current assets / current liabilities.',
@@ -505,9 +539,9 @@ if sentiment_input_needed:
     st.session_state.news_article = st.text_area("Enter Company News Article Here",
                                 value=st.session_state.news_article,
                                 height=200, key="news_article_input")
-
+    
     sentiment_result = analyze_sentiment(st.session_state.news_article)
-
+    
     st.subheader("News Article Sentiment:")
     st.info(f"VADER Compound Score: {sentiment_result['Avg_Compound']:.2f} (Positive: {sentiment_result['Avg_Positive']:.2f}, Neutral: {sentiment_result['Avg_Neutral']:.2f}, Negative: {sentiment_result['Avg_Negative']:.2f})")
 
@@ -522,7 +556,7 @@ st.markdown("---")
 
 # --- Prediction Button ---
 if st.button(f"Predict Credit Rating with {selected_model_name}", key="predict_button"):
-
+    
     # Prepare input data based on selected model type
     if sentiment_input_needed:
         if sentiment_result is None: # Should not happen if sentiment_input_needed is True
@@ -542,11 +576,15 @@ if st.button(f"Predict Credit Rating with {selected_model_name}", key="predict_b
     input_df_for_prediction = input_df_for_prediction[required_features]
 
     with st.spinner(f"Predicting with {selected_model_name}..."):
-        predicted_rating, probabilities = predict_credit_rating(selected_model, selected_scaler, input_df_for_prediction, required_features)
-
+        predicted_rating, probabilities = predict_credit_rating(selected_model, selected_scaler, input_df_for_prediction, required_features, label_encoder)
+        
         st.header("3. Prediction Result")
         st.success(f"The predicted credit rating for {st.session_state.company_name} using {selected_model_name} is: **{predicted_rating}**")
 
+        with st.popover(f"What is '{predicted_rating}'?"):
+            st.write(f"**{predicted_rating}:** {CREDIT_RATING_DEFINITIONS.get(predicted_rating, 'Definition not available.')}")
+
+        st.write("---")
         st.subheader("Prediction Probabilities:")
         prob_df = pd.DataFrame(probabilities.items(), columns=['Rating', 'Probability'])
         prob_df['Probability'] = prob_df['Probability'].astype(float) # Ensure numeric for sorting
@@ -557,21 +595,14 @@ if st.button(f"Predict Credit Rating with {selected_model_name}", key="predict_b
         st.write("---")
         st.subheader("Key Feature Contributions (SHAP Values):")
         st.markdown("*(Green bars indicate a positive contribution to the predicted rating; red bars indicate a negative contribution.)*")
-
-        # Store last prediction details in session state for SHAP plotting
-        st.session_state.last_predicted_model = selected_model
-        st.session_state.last_predicted_rating = predicted_rating
-        st.session_state.last_input_df = input_df_for_prediction
-        st.session_state.last_feature_cols = required_features
-        st.session_state.last_scaler = selected_scaler
-
+        
         # Call the SHAP plotting function
         plot_shap_contributions(
-            st.session_state.last_predicted_model,
-            st.session_state.last_scaler,
-            st.session_state.last_input_df,
-            st.session_state.last_feature_cols,
-            st.session_state.last_predicted_rating
+            selected_model,
+            selected_scaler,
+            input_df_for_prediction,
+            required_features,
+            predicted_rating
         )
 
 # --- Reset Button (placed at the bottom for accessibility) ---
@@ -580,4 +611,3 @@ st.button("Reset All Inputs", on_click=reset_inputs)
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant.")
-
