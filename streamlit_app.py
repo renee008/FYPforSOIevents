@@ -296,7 +296,8 @@ CREDIT_RATING_DEFINITIONS = {
 def plot_feature_contributions(model, feature_columns, model_label):
     """
     Calculates and plots global feature importances for the given model.
-    Uses original feature importance scores and dynamically sets the X-axis.
+    The importances are scaled such that the most important feature has a value of 10.
+    The X-axis is set to 0-10.
     """
     try:
         feature_importances = None
@@ -315,13 +316,18 @@ def plot_feature_contributions(model, feature_columns, model_label):
             st.info(f"Could not retrieve feature importances for {model_label}.")
             return
 
-        # Use the raw feature importances directly as requested
-        # No normalization or scaling to sum to 1 or 100
-        
+        # Scale the importances such that the maximum value becomes 10
+        max_importance = np.max(feature_importances)
+        if max_importance > 0:
+            scaled_importances = (feature_importances / max_importance) * 10
+        else:
+            scaled_importances = np.zeros_like(feature_importances) # All zeros if max is zero
+
+
         # Create a DataFrame for feature importances
         importance_df = pd.DataFrame({
             'Feature': feature_columns,
-            'Importance': feature_importances
+            'Importance': scaled_importances # Use scaled importances for plotting
         })
         
         # Sort by importance for better visualization
@@ -329,25 +335,15 @@ def plot_feature_contributions(model, feature_columns, model_label):
 
         fig, ax = plt.subplots(figsize=(8, max(5, len(feature_columns) * 0.3))) # Dynamic height, slightly smaller for columns
         ax.barh(importance_df['Feature'], importance_df['Importance'], color='#4CAF50') # Green bars
-        ax.set_xlabel("Feature Importance Score") # Original label
+        ax.set_xlabel("Feature Importance Score (Scaled to Max 10)") # Updated label
         ax.set_title(f"Overall Feature Contributions:\n{model_label}", fontsize=10) # Smaller title for columns
         
-        # Dynamically set X-axis limits based on max importance, similar to the image
-        max_val = np.max(feature_importances)
-        # Ensure max_val is not zero to avoid division by zero or infinite range
-        if max_val == 0:
-            ax.set_xlim(0, 1) # Default small range if all importances are zero
-        else:
-            ax.set_xlim(0, max_val * 1.1) # Add 10% padding
-
-        # Set X-axis ticks to be integers, spaced appropriately
-        # Use a more flexible approach to tick generation
-        if max_val > 0:
-            tick_interval = max(1, int(max_val / 5)) # Aim for about 5 ticks, at least 1 unit apart
-            ax.set_xticks(np.arange(0, max_val * 1.1 + tick_interval, tick_interval))
-            ax.set_xticklabels([str(int(x)) for x in ax.get_xticks()]) # Ensure integer labels
-        else:
-            ax.set_xticks(np.arange(0, 1.1, 0.2)) # Default ticks for small range
+        # Set X-axis limits to 0-10
+        ax.set_xlim(0, 10)
+        
+        # Set X-axis ticks and labels to 0-10 (integers)
+        ax.set_xticks(np.arange(0, 11, 1)) # Ticks from 0 to 10, step 1
+        ax.set_xticklabels([str(int(x)) for x in np.arange(0, 11, 1)]) # Labels as integers
 
         plt.tight_layout()
         st.pyplot(fig)
@@ -584,7 +580,7 @@ if sentiment_input_needed:
     if sentiment_result['category'] == "Positive":
         st.success(f"Sentiment Category: **{sentiment_result['category']}** 😊")
     elif sentiment_result['category'] == "Negative":
-        st.error(f"Sentiment Category: **{sentiment_result['category']}** �")
+        st.error(f"Sentiment Category: **{sentiment_result['category']}** 😠")
     else:
         st.info(f"Sentiment Category: **{sentiment_result['category']}** 😐")
 
@@ -625,6 +621,14 @@ if st.button(f"Predict Credit Rating(s)", key="predict_button"):
 
             with st.popover(f"What is '{predicted_rating}'?"):
                 st.write(f"**{predicted_rating}:** {CREDIT_RATING_DEFINITIONS.get(predicted_rating, 'Definition not available.')}")
+
+            st.write("---")
+            st.subheader("Prediction Probabilities:")
+            prob_df = pd.DataFrame(probabilities.items(), columns=['Rating', 'Probability'])
+            prob_df['Probability'] = prob_df['Probability'].astype(float) # Ensure numeric for sorting
+            prob_df = prob_df.sort_values(by='Probability', ascending=False)
+            prob_df['Probability'] = prob_df['Probability'].apply(lambda x: f"{x:.2%}") # Format as percentage
+            st.dataframe(prob_df, hide_index=True, use_container_width=True)
 
             st.write("---")
             st.subheader("Key Feature Contributions (Overall Importance):")
@@ -706,6 +710,7 @@ st.button("Reset All Inputs", on_click=reset_inputs)
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant.")
+
 
 
 
