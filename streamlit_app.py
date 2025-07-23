@@ -416,7 +416,7 @@ if 'company_name' not in st.session_state:
 
 def reset_inputs():
     st.session_state.financial_inputs = {col: default_values.get(col, 0.0) for col in FINANCIAL_COLS}
-    st.session_state.news_article = "Example: The company announced record loss this quarter", exceeding all expectations and leading to a significant stock price decrease. However, concerns about market competition are rising."
+    st.session_state.news_article = "Example: The company announced record loss this quarter, exceeding all expectations and leading to a significant stock price decrease. However, concerns about market competition are rising."
     st.session_state.company_name = "Example Corp"
 
 
