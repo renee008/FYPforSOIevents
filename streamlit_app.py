@@ -296,7 +296,8 @@ CREDIT_RATING_DEFINITIONS = {
 def plot_feature_contributions(model, feature_columns, model_label):
     """
     Calculates and plots global feature importances for the given model.
-    The importances are normalized to sum to 1 and the X-axis is scaled to 0-10.
+    The importances are scaled such that the most important feature has a value of 10.
+    The X-axis is set to 0-10.
     """
     try:
         feature_importances = None
@@ -315,15 +316,19 @@ def plot_feature_contributions(model, feature_columns, model_label):
             st.info(f"Could not retrieve feature importances for {model_label}.")
             return
 
-        # Normalize feature importances to sum to 1
+        # Normalize feature importances to sum to 1 first (for relative comparison)
         if np.sum(feature_importances) > 0:
-            feature_importances = feature_importances / np.sum(feature_importances)
+            normalized_importances = feature_importances / np.sum(feature_importances)
         else:
             st.warning(f"Sum of feature importances is zero for {model_label}. Cannot normalize.")
             return
 
-        # Scale normalized importances to a 0-10 range for display
-        scaled_importances = feature_importances * 10
+        # Now, scale these normalized importances so that the maximum value becomes 10
+        max_normalized_importance = np.max(normalized_importances)
+        if max_normalized_importance > 0:
+            scaled_importances = (normalized_importances / max_normalized_importance) * 10
+        else:
+            scaled_importances = np.zeros_like(normalized_importances) # All zeros if max is zero
 
 
         # Create a DataFrame for feature importances
@@ -623,14 +628,6 @@ if st.button(f"Predict Credit Rating(s)", key="predict_button"):
 
             with st.popover(f"What is '{predicted_rating}'?"):
                 st.write(f"**{predicted_rating}:** {CREDIT_RATING_DEFINITIONS.get(predicted_rating, 'Definition not available.')}")
-
-            st.write("---")
-            st.subheader("Prediction Probabilities:")
-            prob_df = pd.DataFrame(probabilities.items(), columns=['Rating', 'Probability'])
-            prob_df['Probability'] = prob_df['Probability'].astype(float) # Ensure numeric for sorting
-            prob_df = prob_df.sort_values(by='Probability', ascending=False)
-            prob_df['Probability'] = prob_df['Probability'].apply(lambda x: f"{x:.2%}") # Format as percentage
-            st.dataframe(prob_df, hide_index=True, use_container_width=True)
 
             st.write("---")
             st.subheader("Key Feature Contributions (Overall Importance):")
