@@ -204,8 +204,13 @@ def _predict_single_model(model, scaler, input_df, feature_columns, label_encode
 
         # Handle prediction based on model type
         if isinstance(model, CatBoostClassifier):
-            # CatBoost predict can return a 1-element array, ensure it's a string
-            predicted_rating_str = str(model.predict(scaled_data)[0])
+            # CatBoost predict can return a 1-element array, ensure it's a scalar string
+            predicted_rating_raw = model.predict(scaled_data)[0]
+            if isinstance(predicted_rating_raw, np.ndarray): # If it's still a numpy array (e.g., array(['A']))
+                predicted_rating_str = predicted_rating_raw.item() # Extract the scalar string
+            else: # It's already a string
+                predicted_rating_str = str(predicted_rating_raw)
+            
             probabilities = model.predict_proba(scaled_data)[0]
             class_names = model.classes_ # CatBoost stores class names
         elif isinstance(model, RandomForestClassifier) or isinstance(model, xgb.XGBClassifier):
@@ -300,6 +305,9 @@ def plot_shap_contributions(model, scaler, input_df, feature_columns, predicted_
         # Ensure scaled_data is 2D (1, n_features) for SHAP
         if scaled_data.ndim == 1:
             scaled_data = scaled_data.reshape(1, -1)
+        
+        # Ensure scaled_data is a numpy array for SHAP explainer
+        scaled_data = np.asarray(scaled_data)
 
         # Initialize SHAP explainer based on model type
         if isinstance(model, CatBoostClassifier) or isinstance(model, RandomForestClassifier) or \
@@ -726,5 +734,6 @@ st.button("Reset All Inputs", on_click=reset_inputs)
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant.")
+
 
 
