@@ -98,23 +98,23 @@ def load_models_and_scalers():
         cat_model_A = CatBoostClassifier()
         cat_model_A.load_model('CatboostML.modelA.cbm')
         models['CatBoost Model A (Financial Only)'] = cat_model_A
-        scalers['CatBoost Model A (Financial Only)'] = joblib.load('renee_scaler_financial.pkl') 
+        scalers['CatBoost Model A (Financial Only)'] = joblib.load('renee_scaler_financial.pkl')
 
         # Load CatBoost Model B (Financial + Sentiment) and its scaler (renee_scaler_all.pkl)
         cat_model_B = CatBoostClassifier()
         cat_model_B.load_model('CatboostML.modelB.cbm')
         models['CatBoost Model B (Financial + Sentiment)'] = cat_model_B
-        scalers['CatBoost Model B (Financial + Sentiment)'] = joblib.load('renee_scaler_all.pkl') 
+        scalers['CatBoost Model B (Financial + Sentiment)'] = joblib.load('renee_scaler_all.pkl')
 
-        # Load RandomForest Model A (Financial Only) and its scaler (ath_scaler_fin.pkl)
+        # Load RandomForest Model A (Financial Only) and its scaler (ath_scaler_financial.pkl)
         rf_model_A = joblib.load('RandomForest_modelA.pkl')
         models['RandomForest Model A (Financial Only)'] = rf_model_A
-        scalers['RandomForest Model A (Financial Only)'] = joblib.load('ath_scaler_fin.pkl') 
+        scalers['RandomForest Model A (Financial Only)'] = joblib.load('ath_scaler_financial.pkl')
 
         # Load RandomForest Model B (Financial + Sentiment) and its scaler (ath_scaler_all.pkl)
         rf_model_B = joblib.load('RandomForest_modelB.pkl')
         models['RandomForest Model B (Financial + Sentiment)'] = rf_model_B
-        scalers['RandomForest Model B (Financial + Sentiment)'] = joblib.load('ath_scaler_all.pkl') 
+        scalers['RandomForest Model B (Financial + Sentiment)'] = joblib.load('ath_scaler_all.pkl')
 
         st.success("All models and scalers loaded successfully!")
     except FileNotFoundError as e:
@@ -140,7 +140,7 @@ def predict_credit_rating(model, scaler, input_df, feature_columns) -> tuple:
     try:
         input_df_reindexed = input_df[feature_columns]
         scaled_data = scaler.transform(input_df_reindexed)
-        
+
         # Predict the rating
         # CatBoost's predict returns a 2D array, RandomForest's predict returns a 1D array
         predicted_rating = model.predict(scaled_data)
@@ -149,12 +149,12 @@ def predict_credit_rating(model, scaler, input_df, feature_columns) -> tuple:
 
         # Get prediction probabilities
         probabilities = model.predict_proba(scaled_data)[0] # Get probabilities for the single instance
-        
+
         # Map probabilities to class names
         # Ensure model.classes_ is consistent with RATING_ORDER if possible
         class_names = model.classes_ if hasattr(model, 'classes_') else RATING_ORDER
         probabilities_dict = dict(zip(class_names, probabilities))
-        
+
         return str(predicted_rating), probabilities_dict
 
     except Exception as e:
@@ -174,7 +174,7 @@ def analyze_sentiment(news_article: str) -> dict:
     try:
         analyzer = SentimentIntensityAnalyzer()
         vs = analyzer.polarity_scores(news_article)
-        
+
         compound_score = vs['compound']
 
         if compound_score >= 0.05:
@@ -183,7 +183,7 @@ def analyze_sentiment(news_article: str) -> dict:
             category = "Negative"
         else:
             category = "Neutral"
-            
+
         avg_positive_flag = 1.0 if compound_score >= 0.05 else 0.0
         avg_neutral_flag = 1.0 if -0.05 < compound_score < 0.05 else 0.0
         avg_negative_flag = 1.0 if compound_score <= -0.05 else 0.0
@@ -239,9 +239,9 @@ def plot_shap_contributions(model, scaler, input_df, feature_columns, predicted_
             else: # Fallback if model.classes_ is not available (e.g., some custom RF setups)
                 st.warning("Model classes not found for precise SHAP explanation. Using first class SHAP values.")
                 predicted_class_idx = 0 # Default to first class's explanation
-            
+
             shap_values_for_plot = shap_values[predicted_class_idx][0] # Get SHAP values for the single instance of the predicted class
-            
+
         else: # Binary classification or simplified multi-class (e.g., RandomForest might return 2D array directly)
             shap_values_for_plot = shap_values[0] # Get SHAP values for the single instance
 
@@ -417,7 +417,7 @@ for i, col_name in enumerate(FINANCIAL_COLS): # Always show all financial inputs
         # Add a note for percentage-like metrics
         if 'Margin' in col_name or 'ReturnOn' in col_name or 'TaxRate' in col_name or 'Ratio' in col_name:
             st.caption("Enter as decimal (e.g., 0.1 for 10%)")
-        
+
         # Add a tooltip/help text for each metric
         metric_help_text = {
             'currentRatio': 'Measures short-term liquidity: current assets / current liabilities.',
@@ -464,9 +464,9 @@ if sentiment_input_needed:
     st.session_state.news_article = st.text_area("Enter Company News Article Here",
                                 value=st.session_state.news_article,
                                 height=200, key="news_article_input")
-    
+
     sentiment_result = analyze_sentiment(st.session_state.news_article)
-    
+
     st.subheader("News Article Sentiment:")
     st.info(f"VADER Compound Score: {sentiment_result['Avg_Compound']:.2f} (Positive: {sentiment_result['Avg_Positive']:.2f}, Neutral: {sentiment_result['Avg_Neutral']:.2f}, Negative: {sentiment_result['Avg_Negative']:.2f})")
 
@@ -481,7 +481,7 @@ st.markdown("---")
 
 # --- Prediction Button ---
 if st.button(f"Predict Credit Rating with {selected_model_name}", key="predict_button"):
-    
+
     # Prepare input data based on selected model type
     if sentiment_input_needed:
         if sentiment_result is None: # Should not happen if sentiment_input_needed is True
@@ -502,7 +502,7 @@ if st.button(f"Predict Credit Rating with {selected_model_name}", key="predict_b
 
     with st.spinner(f"Predicting with {selected_model_name}..."):
         predicted_rating, probabilities = predict_credit_rating(selected_model, selected_scaler, input_df_for_prediction, required_features)
-        
+
         st.header("3. Prediction Result")
         st.success(f"The predicted credit rating for {st.session_state.company_name} using {selected_model_name} is: **{predicted_rating}**")
 
@@ -516,7 +516,7 @@ if st.button(f"Predict Credit Rating with {selected_model_name}", key="predict_b
         st.write("---")
         st.subheader("Key Feature Contributions (SHAP Values):")
         st.markdown("*(Green bars indicate a positive contribution to the predicted rating; red bars indicate a negative contribution.)*")
-        
+
         # Store last prediction details in session state for SHAP plotting
         st.session_state.last_predicted_model = selected_model
         st.session_state.last_predicted_rating = predicted_rating
