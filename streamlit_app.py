@@ -312,9 +312,14 @@ def plot_shap_contributions(model, scaler, input_df, feature_columns, predicted_
         if scaled_data.ndim == 1:
             scaled_data = scaled_data.reshape(1, -1)
         
+        # Explicitly convert to float32, sometimes SHAP/models prefer this
+        scaled_data = scaled_data.astype(np.float32)
+
         # Debugging: Print shape and type of data just before SHAP
         st.write(f"DEBUG: {model_label} - Type of scaled_data before SHAP: {type(scaled_data)}")
         st.write(f"DEBUG: {model_label} - Shape of scaled_data before SHAP: {scaled_data.shape}")
+        st.write(f"DEBUG: {model_label} - Dtype of scaled_data before SHAP: {scaled_data.dtype}")
+
 
         # Initialize SHAP explainer based on model type
         if isinstance(model, CatBoostClassifier) or isinstance(model, RandomForestClassifier) or \
@@ -741,6 +746,7 @@ st.button("Reset All Inputs", on_click=reset_inputs)
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant.")
+
 
 
 
