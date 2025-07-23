@@ -113,6 +113,18 @@ FINANCIAL_COLS = [
     'enterpriseValueMultiple', 'payablesTurnover','operatingCashFlowPerShare', 'operatingCashFlowSalesRatio'
 ]
 
+# Define categories for financial inputs for better UI
+FINANCIAL_CATEGORIES = {
+    "Liquidity Ratios": ['currentRatio', 'quickRatio', 'cashRatio'],
+    "Profitability & Margins": ['netProfitMargin', 'pretaxProfitMargin', 'grossProfitMargin', 'operatingCashFlowSalesRatio'],
+    "Asset Efficiency": ['daysOfSalesOutstanding', 'assetTurnover', 'fixedAssetTurnover', 'payablesTurnover'],
+    "Leverage & Debt": ['debtRatio'],
+    "Return Ratios": ['returnOnAssets', 'returnOnEquity'],
+    "Cash Flow Metrics": ['freeCashFlowOperatingCashFlowRatio', 'freeCashFlowPerShare', 'cashPerShare', 'operatingCashFlowPerShare'],
+    "Other Key Metrics": ['enterpriseValueMultiple', 'effectiveTaxRate']
+}
+
+
 SENTIMENT_COLS = ['Avg_Positive', 'Avg_Neutral', 'Avg_Negative', 'Avg_Compound']
 ALL_COLS = FINANCIAL_COLS + SENTIMENT_COLS
 
@@ -404,7 +416,7 @@ if 'company_name' not in st.session_state:
 
 def reset_inputs():
     st.session_state.financial_inputs = {col: default_values.get(col, 0.0) for col in FINANCIAL_COLS}
-    st.session_state.news_article = "Example: The company announced record loss this quarter, exceeding all expectations and leading to a significant stock price decrease. However, concerns about market competition are rising."
+    st.session_state.news_article = "Example: The company announced record loss this quarter", exceeding all expectations and leading to a significant stock price decrease. However, concerns about market competition are rising."
     st.session_state.company_name = "Example Corp"
 
 
@@ -510,54 +522,54 @@ else: # Placeholder or separator selected
 
 st.markdown("---")
 
-# --- Input Fields for Financial Metrics ---
+# --- Input Fields for Financial Metrics (Enhanced UI) ---
 st.header("Enter Financial Metrics")
 st.markdown("*(All values should be numerical. Enter percentages as decimals, e.g., 0.1 for 10%)*")
 
-# Use columns for better layout of inputs
-num_cols_per_row = 2
-cols = st.columns(num_cols_per_row)
-
-for i, col_name in enumerate(FINANCIAL_COLS): # Always show all financial inputs
-    with cols[i % num_cols_per_row]:
-        st.write(f"**{col_name}**")
-        # Add a note for percentage-like metrics
-        if 'Margin' in col_name or 'ReturnOn' in col_name or 'TaxRate' in col_name or 'Ratio' in col_name:
-            st.caption("Enter as decimal (e.g., 0.1 for 10%)")
+# Iterate through categories and create expanders for each
+for category, cols_in_category in FINANCIAL_CATEGORIES.items():
+    with st.expander(f"**{category}**"):
+        num_cols_per_row_in_expander = 2
+        expander_cols = st.columns(num_cols_per_row_in_expander)
         
-        # Add a tooltip/help text for each metric
-        metric_help_text = {
-            'currentRatio': 'Measures short-term liquidity: current assets / current liabilities.',
-            'quickRatio': 'Measures short-term liquidity excluding inventory: (current assets - inventory) / current liabilities.',
-            'cashRatio': 'Most conservative liquidity measure: cash / current liabilities.',
-            'daysOfSalesOutstanding': 'Average number of days to collect accounts receivable.',
-            'netProfitMargin': 'Percentage of revenue left after all expenses, including taxes.',
-            'pretaxProfitMargin': 'Percentage of revenue left before taxes.',
-            'grossProfitMargin': 'Percentage of revenue left after deducting cost of goods sold.',
-            'returnOnAssets': 'How efficiently a company uses its assets to generate earnings.',
-            'returnOnEquity': 'How much profit a company generates for each dollar of shareholders\' equity.',
-            'assetTurnover': 'How efficiently a company uses its assets to generate sales.',
-            'fixedAssetTurnover': 'How efficiently a company uses its fixed assets to generate sales.',
-            'debtRatio': 'Total debt / total assets. Measures leverage.',
-            'effectiveTaxRate': 'The actual rate of tax paid by a company on its earnings.',
-            'freeCashFlowOperatingCashFlowRatio': 'Free cash flow / operating cash flow. Measures cash available after capital expenditures.',
-            'freeCashFlowPerShare': 'Free cash flow available per share.',
-            'cashPerShare': 'Cash and cash equivalents per outstanding share.',
-            'enterpriseValueMultiple': 'Enterprise Value / EBITDA. Valuation multiple.',
-            'operatingCashFlowPerShare': 'Cash generated from operations per share.',
-            'operatingCashFlowSalesRatio': 'Operating cash flow / sales. Measures cash generated from each dollar of sales.',
-            'payablesTurnover': 'How many times a company pays off its accounts payable during a period.'
-        }
-        st.info(metric_help_text.get(col_name, "No specific help text available."), icon="ℹ️")
+        for i, col_name in enumerate(cols_in_category):
+            with expander_cols[i % num_cols_per_row_in_expander]:
+                st.write(f"**{col_name}**")
+                if 'Margin' in col_name or 'ReturnOn' in col_name or 'TaxRate' in col_name or 'Ratio' in col_name:
+                    st.caption("Enter as decimal (e.g., 0.1 for 10%)")
+                
+                metric_help_text = {
+                    'currentRatio': 'Measures short-term liquidity: current assets / current liabilities.',
+                    'quickRatio': 'Measures short-term liquidity excluding inventory: (current assets - inventory) / current liabilities.',
+                    'cashRatio': 'Most conservative liquidity measure: cash / current liabilities.',
+                    'daysOfSalesOutstanding': 'Average number of days to collect accounts receivable.',
+                    'netProfitMargin': 'Percentage of revenue left after all expenses, including taxes.',
+                    'pretaxProfitMargin': 'Percentage of revenue left before taxes.',
+                    'grossProfitMargin': 'Percentage of revenue left after deducting cost of goods sold.',
+                    'returnOnAssets': 'How efficiently a company uses its assets to generate earnings.',
+                    'returnOnEquity': 'How much profit a company generates for each dollar of shareholders\' equity.',
+                    'assetTurnover': 'How efficiently a company uses its assets to generate sales.',
+                    'fixedAssetTurnover': 'How efficiently a company uses its fixed assets to generate sales.',
+                    'debtRatio': 'Total debt / total assets. Measures leverage.',
+                    'effectiveTaxRate': 'The actual rate of tax paid by a company on its earnings.',
+                    'freeCashFlowOperatingCashFlowRatio': 'Free cash flow / operating cash flow. Measures cash available after capital expenditures.',
+                    'freeCashFlowPerShare': 'Free cash flow available per share.',
+                    'cashPerShare': 'Cash and cash equivalents per outstanding share.',
+                    'enterpriseValueMultiple': 'Enterprise Value / EBITDA. Valuation multiple.',
+                    'operatingCashFlowPerShare': 'Cash generated from operations per share.',
+                    'operatingCashFlowSalesRatio': 'Operating cash flow / sales. Measures cash generated from each dollar of sales.',
+                    'payablesTurnover': 'How many times a company pays off its accounts payable during a period.'
+                }
+                st.info(metric_help_text.get(col_name, "No specific help text available."), icon="ℹ️")
 
-        st.session_state.financial_inputs[col_name] = st.number_input(
-            f"Value for {col_name}",
-            min_value=min_values.get(col_name, 0.0),
-            max_value=max_values.get(col_name, 1000.0),
-            value=st.session_state.financial_inputs.get(col_name, default_values.get(col_name, 0.0)),
-            step=step_values.get(col_name, 0.01),
-            key=f"fin_input_{col_name}" # Unique key for each input
-        )
+                st.session_state.financial_inputs[col_name] = st.number_input(
+                    f"Value for {col_name}",
+                    min_value=min_values.get(col_name, 0.0),
+                    max_value=max_values.get(col_name, 1000.0),
+                    value=st.session_state.financial_inputs.get(col_name, default_values.get(col_name, 0.0)),
+                    step=step_values.get(col_name, 0.01),
+                    key=f"fin_input_{col_name}" # Unique key for each input
+                )
 
 # Convert financial inputs to a DataFrame row
 financial_df_row = pd.DataFrame([st.session_state.financial_inputs])
@@ -642,66 +654,107 @@ if st.button(f"Predict Credit Rating(s)", key="predict_button"):
     else: # "All Models" options
         st.info("Running multiple models. Results will be displayed below.")
         
-        models_to_run = []
+        # Filter models into A and B groups
+        model_A_names = sorted([name for name in models.keys() if "Model A" in name])
+        model_B_names = sorted([name for name in models.keys() if "Model B" in name])
+
+        # Determine which group(s) to run based on selection
+        models_to_run_A = []
+        models_to_run_B = []
+
         if selected_model_name == "All Model A (Financial Only)":
-            models_to_run = [name for name in models.keys() if "Model A" in name]
+            models_to_run_A = model_A_names
         elif selected_model_name == "All Model B (Financial + Sentiment)":
-            models_to_run = [name for name in models.keys() if "Model B" in name]
+            models_to_run_B = model_B_names
         elif selected_model_name == "All Models (A & B)":
-            models_to_run = list(models.keys())
+            models_to_run_A = model_A_names
+            models_to_run_B = model_B_names
         
-        # Sort models_to_run for consistent display
-        models_to_run.sort()
-
-        # Display models in columns
         cols_per_row = 4
-        
-        # Now render results in columns
-        for i in range(0, len(models_to_run), cols_per_row):
-            cols = st.columns(cols_per_row)
-            for j in range(cols_per_row):
-                if i + j < len(models_to_run):
-                    model_name_to_run = models_to_run[i + j]
-                    model = models[model_name_to_run]
-                    scaler = scalers[model_name_to_run]
 
-                    is_sentiment_model = "Financial + Sentiment" in model_name_to_run
-                    
-                    input_df_for_prediction = current_financial_inputs_df.copy()
-                    features_for_model = FINANCIAL_COLS
+        # --- Display All Model A (Financial Only) ---
+        if models_to_run_A:
+            st.subheader("All Model A (Financial Only) Predictions:")
+            for i in range(0, len(models_to_run_A), cols_per_row):
+                cols = st.columns(cols_per_row)
+                for j in range(cols_per_row):
+                    if i + j < len(models_to_run_A):
+                        model_name_to_run = models_to_run_A[i + j]
+                        model = models[model_name_to_run]
+                        scaler = scalers[model_name_to_run]
 
-                    if is_sentiment_model:
+                        features_for_model = FINANCIAL_COLS # Model A always uses financial features
+                        input_df_for_prediction = current_financial_inputs_df.copy()
+                        input_df_for_prediction = input_df_for_prediction[features_for_model]
+
+                        with cols[j]:
+                            st.markdown(f"**{model_name_to_run}**") # Use markdown for smaller title in column
+                            with st.spinner(f"Predicting..."):
+                                predicted_rating, probabilities = _predict_single_model(model, scaler, input_df_for_prediction, features_for_model, label_encoder)
+                                
+                                if predicted_rating != "Prediction failed.":
+                                    st.success(f"Rating: **{predicted_rating}**")
+                                    with st.popover(f"What is '{predicted_rating}'?"):
+                                        st.write(f"**{predicted_rating}:** {CREDIT_RATING_DEFINITIONS.get(predicted_rating, 'Definition not available.')}")
+
+                                    st.markdown("**Probabilities:**")
+                                    prob_df = pd.DataFrame(probabilities.items(), columns=['Rating', 'Probability'])
+                                    prob_df['Probability'] = prob_df['Probability'].astype(float)
+                                    prob_df = prob_df.sort_values(by='Probability', ascending=False)
+                                    prob_df['Probability'] = prob_df['Probability'].apply(lambda x: f"{x:.2%}")
+                                    st.dataframe(prob_df, hide_index=True, use_container_width=True)
+
+                                    st.markdown("**Feature Importance:**")
+                                    plot_feature_contributions(
+                                        model,
+                                        features_for_model,
+                                        model_name_to_run
+                                    )
+                                else:
+                                    st.error(f"Prediction failed.")
+            st.markdown("---") # Separator after Model A group
+
+        # --- Display All Model B (Financial + Sentiment) ---
+        if models_to_run_B:
+            st.subheader("All Model B (Financial + Sentiment) Predictions:")
+            for i in range(0, len(models_to_run_B), cols_per_row):
+                cols = st.columns(cols_per_row)
+                for j in range(cols_per_row):
+                    if i + j < len(models_to_run_B):
+                        model_name_to_run = models_to_run_B[i + j]
+                        model = models[model_name_to_run]
+                        scaler = scalers[model_name_to_run]
+
+                        features_for_model = ALL_COLS # Model B always uses all features
                         all_inputs = {**st.session_state.financial_inputs, **current_sentiment_inputs_dict}
                         input_df_for_prediction = pd.DataFrame([all_inputs])
-                        features_for_model = ALL_COLS
-                    
-                    input_df_for_prediction = input_df_for_prediction[features_for_model] # Ensure correct order
+                        input_df_for_prediction = input_df_for_prediction[features_for_model]
 
-                    with cols[j]:
-                        st.subheader(f"{model_name_to_run}")
-                        with st.spinner(f"Predicting..."):
-                            predicted_rating, probabilities = _predict_single_model(model, scaler, input_df_for_prediction, features_for_model, label_encoder)
-                            
-                            if predicted_rating != "Prediction failed.":
-                                st.success(f"Rating: **{predicted_rating}**")
-                                with st.popover(f"What is '{predicted_rating}'?"):
-                                    st.write(f"**{predicted_rating}:** {CREDIT_RATING_DEFINITIONS.get(predicted_rating, 'Definition not available.')}")
+                        with cols[j]:
+                            st.markdown(f"**{model_name_to_run}**") # Use markdown for smaller title in column
+                            with st.spinner(f"Predicting..."):
+                                predicted_rating, probabilities = _predict_single_model(model, scaler, input_df_for_prediction, features_for_model, label_encoder)
+                                
+                                if predicted_rating != "Prediction failed.":
+                                    st.success(f"Rating: **{predicted_rating}**")
+                                    with st.popover(f"What is '{predicted_rating}'?"):
+                                        st.write(f"**{predicted_rating}:** {CREDIT_RATING_DEFINITIONS.get(predicted_rating, 'Definition not available.')}")
 
-                                st.markdown("**Probabilities:**")
-                                prob_df = pd.DataFrame(probabilities.items(), columns=['Rating', 'Probability'])
-                                prob_df['Probability'] = prob_df['Probability'].astype(float)
-                                prob_df = prob_df.sort_values(by='Probability', ascending=False)
-                                prob_df['Probability'] = prob_df['Probability'].apply(lambda x: f"{x:.2%}")
-                                st.dataframe(prob_df, hide_index=True, use_container_width=True)
+                                    st.markdown("**Probabilities:**")
+                                    prob_df = pd.DataFrame(probabilities.items(), columns=['Rating', 'Probability'])
+                                    prob_df['Probability'] = prob_df['Probability'].astype(float)
+                                    prob_df = prob_df.sort_values(by='Probability', ascending=False)
+                                    prob_df['Probability'] = prob_df['Probability'].apply(lambda x: f"{x:.2%}")
+                                    st.dataframe(prob_df, hide_index=True, use_container_width=True)
 
-                                st.markdown("**Feature Importance:**")
-                                plot_feature_contributions(
-                                    model,
-                                    features_for_model,
-                                    model_name_to_run
-                                )
-                            else:
-                                st.error(f"Prediction failed.")
+                                    st.markdown("**Feature Importance:**")
+                                    plot_feature_contributions(
+                                        model,
+                                        features_for_model,
+                                        model_name_to_run
+                                    )
+                                else:
+                                    st.error(f"Prediction failed.")
 
 
 # --- Reset Button (placed at the bottom for accessibility) ---
@@ -710,6 +763,7 @@ st.button("Reset All Inputs", on_click=reset_inputs)
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant.")
+
 
 
 
