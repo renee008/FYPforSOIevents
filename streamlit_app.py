@@ -2,11 +2,12 @@ import streamlit as st
 import pandas as pd
 import joblib # For loading the scalers and models
 from catboost import CatBoostClassifier
+from sklearn.ensemble import RandomForestClassifier # Import RandomForestClassifier
 from nltk.sentiment.vader import SentimentIntensityAnalyzer # Import VADER
 import nltk # Import nltk
 import shap # For explainability
 import numpy as np # Import numpy for array handling
-import matplotlib.pyplot as plt # For plotting feature contributions
+import matplotlib.pyplot as plt # For plotting SHAP contributions
 
 # --- Custom CSS for Styling ---
 st.markdown(
@@ -25,7 +26,7 @@ st.markdown(
     }
     .stButton>button:hover {
         transform: translateY(-2px);
-        box-shadow: 4px 4px 10px rgba(0,0,0,0.3);
+        box_shadow: 4px 4px 10px rgba(0,0,0,0.3);
     }
     .stTextInput>div>div>input, .stTextArea>div>div>textarea {
         border-radius: 8px;
@@ -42,7 +43,6 @@ st.markdown(
     .st-emotion-cache-1r6dm1x { /* Target expander/popover */
         border-radius: 12px;
     }
-
     /* --- CSS to hide number input arrows --- */
     input[type=number]::-webkit-inner-spin-button,
     input[type=number]::-webkit-outer-spin-button {
@@ -70,9 +70,9 @@ download_nltk_vader()
 # --- Configuration ---
 st.set_page_config(page_title="Credit Rating & Sentiment Predictor", page_icon="📈", layout="centered")
 
-# --- Define Feature Columns (Consistent with 5 removed metrics) ---
-# Removed: debtEquityRatio, ebitPerRevenue, returnOnCapitalEmployed, operatingProfitMargin, companyEquityMultiplier
-financial_cols = [
+# --- Define Feature Columns (Consistent with your MLtraining.py) ---
+# This list has 20 financial features
+FINANCIAL_COLS = [
     'currentRatio', 'quickRatio', 'cashRatio', 'daysOfSalesOutstanding',
     'netProfitMargin', 'pretaxProfitMargin', 'grossProfitMargin',
     'returnOnAssets', 'returnOnEquity', 'assetTurnover',
@@ -81,8 +81,11 @@ financial_cols = [
     'enterpriseValueMultiple', 'payablesTurnover','operatingCashFlowPerShare', 'operatingCashFlowSalesRatio'
 ]
 
-sentiment_cols = ['Avg_Positive', 'Avg_Neutral', 'Avg_Negative', 'Avg_Compound']
-all_cols = financial_cols + sentiment_cols
+SENTIMENT_COLS = ['Avg_Positive', 'Avg_Neutral', 'Avg_Negative', 'Avg_Compound']
+ALL_COLS = FINANCIAL_COLS + SENTIMENT_COLS
+
+# --- Define a consistent order for credit ratings ---
+RATING_ORDER = ['AAA', 'AA', 'A', 'BBB', 'BB', 'B', 'CCC', 'CC', 'C', 'D']
 
 # --- Model and Scaler Loading ---
 @st.cache_resource # Cache the models and scalers to avoid reloading on every rerun
@@ -90,44 +93,42 @@ def load_models_and_scalers():
     models = {}
     scalers = {}
 
-    # Load Model A (Financial Only) and its scaler
     try:
-        model_A = CatBoostClassifier()
-        model_A.load_model('CatboostML.modelA.cbm')
-        models['A'] = model_A
-    except Exception as e:
-        st.error(f"Error loading Model A: {e}")
-        st.warning("Please ensure 'CatboostML.modelA.cbm' is in the same directory and trained with the correct features.")
+        # Load CatBoost Model A (Financial Only) and its scaler (renee_scaler_fin.pkl)
+        cat_model_A = CatBoostClassifier()
+        cat_model_A.load_model('CatboostML.modelA.cbm')
+        models['CatBoost Model A (Financial Only)'] = cat_model_A
+        scalers['CatBoost Model A (Financial Only)'] = joblib.load('renee_scaler_financial.pkl') 
 
-    try:
-        scaler_fin = joblib.load('renee_scaler_financial.pkl')
-        scalers['fin'] = scaler_fin
-    except Exception as e:
-        st.error(f"Error loading scaler_fin.pkl: {e}")
-        st.warning("Please ensure 'scaler_fin.pkl' is in the same directory and trained with the correct features.")
+        # Load CatBoost Model B (Financial + Sentiment) and its scaler (renee_scaler_all.pkl)
+        cat_model_B = CatBoostClassifier()
+        cat_model_B.load_model('CatboostML.modelB.cbm')
+        models['CatBoost Model B (Financial + Sentiment)'] = cat_model_B
+        scalers['CatBoost Model B (Financial + Sentiment)'] = joblib.load('renee_scaler_all.pkl') 
 
-    # Load Model B (Financial + Sentiment) and its scaler
-    try:
-        model_B = CatBoostClassifier()
-        model_B.load_model('CatboostML.modelB.cbm')
-        models['B'] = model_B
-    except Exception as e:
-        st.error(f"Error loading Model B: {e}")
-        st.warning("Please ensure 'CatboostML.modelB.cbm' is in the same directory and trained with the correct features.")
+        # Load RandomForest Model A (Financial Only) and its scaler (ath_scaler_fin.pkl)
+        rf_model_A = joblib.load('RandomForest_modelA.pkl')
+        models['RandomForest Model A (Financial Only)'] = rf_model_A
+        scalers['RandomForest Model A (Financial Only)'] = joblib.load('ath_scaler_fin.pkl') 
 
-    try:
-        scaler_all = joblib.load('renee_scaler_all.pkl')
-        scalers['all'] = scaler_all
-    except Exception as e:
-        st.error(f"Error loading scaler_all.pkl: {e}")
-        st.warning("Please ensure 'scaler_all.pkl' is in the same directory and trained with the correct features.")
+        # Load RandomForest Model B (Financial + Sentiment) and its scaler (ath_scaler_all.pkl)
+        rf_model_B = joblib.load('RandomForest_modelB.pkl')
+        models['RandomForest Model B (Financial + Sentiment)'] = rf_model_B
+        scalers['RandomForest Model B (Financial + Sentiment)'] = joblib.load('ath_scaler_all.pkl') 
 
+        st.success("All models and scalers loaded successfully!")
+    except FileNotFoundError as e:
+        st.error(f"Error loading model or scaler file: {e}. Please ensure all model and scaler files are in the same directory.")
+        st.stop() # Stop the app if essential files are missing
+    except Exception as e:
+        st.error(f"An unexpected error occurred while loading models: {e}")
+        st.stop()
     return models, scalers
 
+# Load models and scalers at the start of the app
 models, scalers = load_models_and_scalers()
 
-# --- Prediction Functions ---
-
+# --- Prediction Function ---
 def predict_credit_rating(model, scaler, input_df, feature_columns) -> tuple:
     """
     Predicts the credit rating and its probabilities using the given model and scaler.
@@ -140,12 +141,18 @@ def predict_credit_rating(model, scaler, input_df, feature_columns) -> tuple:
         input_df_reindexed = input_df[feature_columns]
         scaled_data = scaler.transform(input_df_reindexed)
         
-        # Use .item() to extract the scalar string value from the numpy array
-        predicted_rating = model.predict(scaled_data).item()
+        # Predict the rating
+        # CatBoost's predict returns a 2D array, RandomForest's predict returns a 1D array
+        predicted_rating = model.predict(scaled_data)
+        if isinstance(predicted_rating, np.ndarray) and predicted_rating.ndim > 0:
+            predicted_rating = predicted_rating.flatten()[0] # Get the scalar value
+
+        # Get prediction probabilities
         probabilities = model.predict_proba(scaled_data)[0] # Get probabilities for the single instance
         
         # Map probabilities to class names
-        class_names = model.classes_
+        # Ensure model.classes_ is consistent with RATING_ORDER if possible
+        class_names = model.classes_ if hasattr(model, 'classes_') else RATING_ORDER
         probabilities_dict = dict(zip(class_names, probabilities))
         
         return str(predicted_rating), probabilities_dict
@@ -154,6 +161,7 @@ def predict_credit_rating(model, scaler, input_df, feature_columns) -> tuple:
         st.error(f"Error during credit rating prediction: {e}")
         return "Prediction failed.", {}
 
+# --- Sentiment Analysis Function ---
 def analyze_sentiment(news_article: str) -> dict:
     """
     Analyzes the sentiment of a news article using VADER and returns the
@@ -207,117 +215,56 @@ CREDIT_RATING_DEFINITIONS = {
 }
 
 # --- SHAP Explainability Function ---
-def get_feature_contributions(model, scaler, input_df, feature_columns, top_n=5):
+def plot_shap_contributions(model, scaler, input_df, feature_columns, predicted_rating_str):
     """
-    Calculates SHAP values and returns the top N most influential features
-    and their impact (positive/negative) for the predicted class.
+    Calculates and plots SHAP values for a single prediction.
     """
     try:
-        # Ensure feature_columns is a list
-        feature_columns_list = list(feature_columns)
-
-        input_df_reindexed = input_df[feature_columns_list]
+        input_df_reindexed = input_df[feature_columns]
         scaled_data = scaler.transform(input_df_reindexed)
-        
-        # Convert scaled_data back to a DataFrame with column names for SHAP
-        scaled_data_df = pd.DataFrame(scaled_data, columns=feature_columns_list)
-        
+
+        # Initialize SHAP explainer
         explainer = shap.TreeExplainer(model)
-        shap_values = explainer.shap_values(scaled_data_df) # Pass the DataFrame here
+        shap_values = explainer.shap_values(scaled_data)
 
-        # Get the predicted class label (e.g., 'B', 'AAA')
-        predicted_class_label = model.predict(scaled_data).item()
-        
-        shap_values_for_prediction = None
-
-        # Determine the integer index of the predicted class
-        try:
-            predicted_class_index = list(model.classes_).index(predicted_class_label)
-        except ValueError:
-            st.warning(f"Predicted class '{predicted_class_label}' not found in model.classes_ for SHAP explanation.")
-            return []
-
-        # Handle different SHAP output structures for multi-class CatBoost
-        if isinstance(shap_values, list) and len(shap_values) == len(model.classes_):
-            # This is the standard multi-class output: list of arrays, one for each class
-            # Each array is (num_instances, num_features). We need the first instance.
-            if predicted_class_index < len(shap_values):
-                shap_values_for_prediction = shap_values[predicted_class_index][0] 
-            else:
-                st.warning(f"Predicted class index {predicted_class_index} out of bounds for SHAP values list (len: {len(shap_values)}).")
-                return []
-        elif isinstance(shap_values, np.ndarray) and shap_values.ndim == 3:
-            # This handles the (1, N_FEATURES, N_CLASSES) structure
-            # Extract SHAP values for the single instance (0) and the specific predicted class
-            shap_values_for_prediction = shap_values[0, :, predicted_class_index]
-        elif isinstance(shap_values, np.ndarray) and shap_values.ndim == 2 and shap_values.shape[0] == 1:
-            # Binary classification or simplified multi-class (1, N_FEATURES)
-            shap_values_for_prediction = shap_values[0]
-        elif isinstance(shap_values, np.ndarray) and shap_values.ndim == 1:
-            # Already 1D array (N_FEATURES)
-            shap_values_for_prediction = shap_values
-        else:
-            st.warning(f"Unexpected SHAP numpy array structure. ndim: {getattr(shap_values, 'ndim', 'N/A')}, shape: {getattr(shap_values, 'shape', 'N/A')}. Expected list of arrays or specific numpy array shapes.")
-            return []
-
-        if shap_values_for_prediction is None:
-            return []
-        
-        # Final check: ensure the length of SHAP values matches the number of features
-        if len(shap_values_for_prediction) != len(feature_columns_list):
-            st.warning(f"Mismatch in SHAP values length ({len(shap_values_for_prediction)}) and feature columns length ({len(feature_columns_list)}). This can cause incorrect explanations.")
-            return []
-
-        # Create a Series for easier handling
-        feature_impact = pd.Series(shap_values_for_prediction, index=feature_columns_list)
-        
-        # Sort by absolute value to find the most impactful features
-        sorted_impact = feature_impact.abs().sort_values(ascending=False)
-        
-        contributions = []
-        for feature_name in sorted_impact.index[:top_n]:
-            impact_value = feature_impact[feature_name]
-            direction = "higher" if impact_value > 0 else "lower" # Changed to higher/lower for clarity
-            contributions.append((feature_name, impact_value, direction))
+        # Determine which SHAP values to use for plotting based on predicted class
+        if isinstance(shap_values, list): # Multi-class output (e.g., CatBoost or some RandomForest setups)
+            # Find the index of the predicted class in the model's classes_ array
+            if hasattr(model, 'classes_'):
+                try:
+                    predicted_class_idx = list(model.classes_).index(predicted_rating_str)
+                except ValueError:
+                    st.warning(f"Predicted class '{predicted_rating_str}' not found in model.classes_ for SHAP explanation. Using average SHAP values.")
+                    predicted_class_idx = 0 # Fallback to first class index
+            else: # Fallback if model.classes_ is not available (e.g., some custom RF setups)
+                st.warning("Model classes not found for precise SHAP explanation. Using first class SHAP values.")
+                predicted_class_idx = 0 # Default to first class's explanation
             
-        return contributions
+            shap_values_for_plot = shap_values[predicted_class_idx][0] # Get SHAP values for the single instance of the predicted class
+            
+        else: # Binary classification or simplified multi-class (e.g., RandomForest might return 2D array directly)
+            shap_values_for_plot = shap_values[0] # Get SHAP values for the single instance
+
+        # Create a SHAP Explanation object for plotting
+        shap_explanation = shap.Explanation(
+            values=shap_values_for_plot,
+            base_values=explainer.expected_value[predicted_class_idx] if isinstance(explainer.expected_value, np.ndarray) and isinstance(shap_values, list) else explainer.expected_value,
+            data=input_df_reindexed.iloc[0].values, # Use the original input data for plotting
+            feature_names=feature_columns
+        )
+
+        # Generate the SHAP summary plot (bar plot for single instance)
+        fig, ax = plt.subplots(figsize=(10, len(feature_columns) * 0.4 + 2)) # Dynamic height
+        shap.summary_plot(shap_values_for_plot, input_df_reindexed, feature_names=feature_columns, plot_type="bar", show=False, color='#2ca02c') # Green color
+        ax.set_title(f"Feature Contributions for Predicted Rating: {predicted_rating_str}")
+        ax.set_xlabel("SHAP Value (Impact on Prediction)")
+        plt.tight_layout()
+        st.pyplot(fig)
+        plt.close(fig) # Close the figure to free memory
 
     except Exception as e:
-        st.error(f"Error calculating feature contributions: {e}")
-        return []
-
-# --- Plotting Function for SHAP Contributions ---
-def plot_shap_contributions_chart(contributions, title):
-    """
-    Plots a horizontal bar chart of SHAP feature contributions.
-    """
-    if not contributions:
-        return None # No plot to generate
-
-    features = [c[0] for c in contributions]
-    impacts = [c[1] for c in contributions]
-    colors = ['#2ca02c' if c[2] == 'higher' else '#d62728' for c in contributions] # Green for higher, Red for lower
-
-    # Sort by absolute impact for consistent display (already sorted by get_feature_contributions, but re-confirm for plot)
-    # This re-sorts just in case, ensuring plot order matches text order
-    sorted_indices = np.argsort(np.abs(impacts))[::-1]
-    features_sorted = [features[i] for i in sorted_indices]
-    impacts_sorted = [impacts[i] for i in sorted_indices]
-    colors_sorted = [colors[i] for i in sorted_indices]
-
-    # Adjust figure size dynamically based on number of features
-    fig, ax = plt.subplots(figsize=(10, max(4, len(features_sorted) * 0.6 + 1))) 
-    y_pos = np.arange(len(features_sorted))
-
-    ax.barh(y_pos, impacts_sorted, color=colors_sorted)
-    ax.set_yticks(y_pos)
-    ax.set_yticklabels(features_sorted)
-    ax.invert_yaxis() # Features with highest impact at the top
-    ax.set_xlabel("SHAP Value (Impact on Prediction)")
-    ax.set_title(title)
-    ax.axvline(0, color='grey', linewidth=0.8, linestyle='--') # Add a vertical line at 0 for reference
-    plt.tight_layout()
-    return fig
+        st.error(f"Could not generate SHAP plot: {e}. This might happen if the model or data structure is not fully compatible with SHAP's TreeExplainer or if there's an issue with the input data.")
+        st.info("Ensure the model was trained with the same feature names and order, and that the SHAP library is compatible with your model version.")
 
 
 # --- Default Values and Ranges for Inputs ---
@@ -363,26 +310,32 @@ step_values = {
 
 # --- Initialize Session State for Reset Button and Prediction Triggers ---
 if 'financial_inputs' not in st.session_state:
-    st.session_state.financial_inputs = {col: default_values.get(col, 0.0) for col in financial_cols}
+    st.session_state.financial_inputs = {col: default_values.get(col, 0.0) for col in FINANCIAL_COLS}
 if 'news_article' not in st.session_state:
     st.session_state.news_article = "Example: The company announced record loss this quarter, exceeding all expectations and leading to a significant stock price decrease. However, concerns about market competition are rising."
 if 'company_name' not in st.session_state:
     st.session_state.company_name = "Example Corp"
-if 'predict_A_triggered' not in st.session_state:
-    st.session_state.predict_A_triggered = False
-if 'predict_B_triggered' not in st.session_state:
-    st.session_state.predict_B_triggered = False
+if 'last_predicted_model' not in st.session_state:
+    st.session_state.last_predicted_model = None
+if 'last_predicted_rating' not in st.session_state:
+    st.session_state.last_predicted_rating = None
+if 'last_input_df' not in st.session_state:
+    st.session_state.last_input_df = None
+if 'last_feature_cols' not in st.session_state:
+    st.session_state.last_feature_cols = None
+if 'last_scaler' not in st.session_state:
+    st.session_state.last_scaler = None
+
 
 def reset_inputs():
-    st.session_state.financial_inputs = {col: default_values.get(col, 0.0) for col in financial_cols}
+    st.session_state.financial_inputs = {col: default_values.get(col, 0.0) for col in FINANCIAL_COLS}
     st.session_state.news_article = "Example: The company announced record loss this quarter, exceeding all expectations and leading to a significant stock price decrease. However, concerns about market competition are rising."
     st.session_state.company_name = "Example Corp"
-    st.session_state.predict_A_triggered = False
-    st.session_state.predict_B_triggered = False
-
-def run_all_predictions():
-    st.session_state.predict_A_triggered = True
-    st.session_state.predict_B_triggered = True
+    st.session_state.last_predicted_model = None
+    st.session_state.last_predicted_rating = None
+    st.session_state.last_input_df = None
+    st.session_state.last_feature_cols = None
+    st.session_state.last_scaler = None
 
 
 # --- Main UI Layout ---
@@ -401,20 +354,23 @@ with tab_about:
     * **Financial Metrics (Quantitative):** This involves analyzing a company's balance sheet, income statement, and cash flow statement. Key ratios like liquidity (e.g., current ratio), profitability (e.g., gross profit margin), leverage (e.g., debt ratio), and efficiency (e.g., days of sales outstanding) are vital.
     * **News Sentiment (Qualitative):** Public sentiment and news coverage can significantly impact a company's perceived risk. Positive news might signal stability and growth, while negative news could indicate potential challenges.
 
-    This application uses two machine learning models:
-    * **Model A (Financial Only):** Predicts credit ratings based solely on a set of key financial metrics.
-    * **Model B (Financial + Sentiment):** Combines these financial metrics with sentiment analysis derived from news articles to provide a more holistic prediction.
+    This application uses four machine learning models:
+    * **CatBoost Model A (Financial Only):** Predicts credit ratings based solely on a set of key financial metrics using a CatBoost Classifier.
+    * **CatBoost Model B (Financial + Sentiment):** Combines financial metrics with sentiment analysis from news articles using a CatBoost Classifier.
+    * **RandomForest Model A (Financial Only):** Predicts credit ratings based solely on a set of key financial metrics using a RandomForest Classifier.
+    * **RandomForest Model B (Financial + Sentiment):** Combines financial metrics with sentiment analysis from news articles using a RandomForest Classifier.
     """)
 
 with tab_how_to_use:
     st.markdown("""
     ### How to Use This Website
-    1.  **Enter Company Name:** Provide the name of the company you are analyzing in the text input field below.
-    2.  **Input Financial Metrics:** Fill in the values for the various financial ratios in the designated section. Please ensure you enter percentage-like metrics (e.g., margins, returns) as decimals (e.g., enter `0.10` for 10%).
-        * **Note on Numerical Inputs:** The number input fields require manual typing of values. The increment/decrement arrows are hidden for a cleaner interface.
-    3.  **Predict with Models:** You can either click "Predict with Model A" or "Analyze Sentiment & Predict with Model B" for individual predictions, or click "Predict All Models" to run both at once.
-    4.  **Review Results:** The prediction results, probabilities, and key feature contributions will appear in the "Prediction Results" section.
-    5.  **Reset Inputs:** Use the "Reset All Inputs" button to clear the form and start fresh.
+    1.  **Enter Company Name:** Provide the name of the company you are analyzing.
+    2.  **Select a Model:** Choose one of the four available models from the dropdown.
+    3.  **Input Financial Metrics:** Fill in the values for the various financial ratios. Enter percentage-like metrics (e.g., margins, returns) as decimals (e.g., `0.10` for 10%).
+    4.  **Enter News Article (for Model B types):** If you select a "Financial + Sentiment" model (Model B), provide a relevant news article.
+    5.  **Predict:** Click the "Predict Credit Rating" button to get a prediction and feature contributions.
+    6.  **Review Results:** The predicted rating, probabilities, and key feature contributions will appear.
+    7.  **Reset Inputs:** Use the "Reset All Inputs" button to clear the form and start fresh.
     """)
 
 st.markdown("---") # Separator below the tabs
@@ -425,195 +381,161 @@ st.session_state.company_name = st.text_input("Company Name", value=st.session_s
 
 st.markdown("---")
 
+# --- Model Selection ---
+st.header("Select Prediction Model")
+selected_model_name = st.selectbox(
+    "Choose a model for prediction:",
+    list(models.keys()),
+    key="model_selector"
+)
+selected_model = models[selected_model_name]
+selected_scaler = scalers[selected_model_name]
+
+# Determine which features are needed for the selected model
+if "Financial Only" in selected_model_name:
+    required_features = FINANCIAL_COLS
+    st.info(f"You selected '{selected_model_name}'. This model uses only financial metrics.")
+    sentiment_input_needed = False
+else: # Implies "Financial + Sentiment"
+    required_features = ALL_COLS
+    st.info(f"You selected '{selected_model_name}'. This model uses both financial metrics and news sentiment.")
+    sentiment_input_needed = True
+
+st.markdown("---")
+
 # --- Input Fields for Financial Metrics ---
 st.header("Enter Financial Metrics")
+st.markdown("*(All values should be numerical. Enter percentages as decimals, e.g., 0.1 for 10%)*")
 
-# Display inputs in a single column
-for i, col_name in enumerate(financial_cols):
-    st.write(f"**{col_name}**")
-    # Add a note for percentage-like metrics
-    if 'Margin' in col_name or 'ReturnOn' in col_name or 'TaxRate' in col_name or ('Ratio' in col_name and col_name not in ['currentRatio', 'quickRatio', 'cashRatio', 'debtRatio', 'freeCashFlowOperatingCashFlowRatio', 'operatingCashFlowSalesRatio']):
-        st.caption("Enter as decimal (e.g., 0.1 for 10%)")
-    
-    # Add a tooltip/help text for each metric
-    metric_help_text = {
-        'currentRatio': 'Measures short-term liquidity: current assets / current liabilities.',
-        'quickRatio': 'Measures short-term liquidity excluding inventory: (current assets - inventory) / current liabilities.',
-        'cashRatio': 'Most conservative liquidity measure: cash / current liabilities.',
-        'daysOfSalesOutstanding': 'Average number of days to collect accounts receivable.',
-        'netProfitMargin': 'Percentage of revenue left after all expenses, including taxes.',
-        'pretaxProfitMargin': 'Percentage of revenue left before taxes.',
-        'grossProfitMargin': 'Percentage of revenue left after deducting cost of goods sold.',
-        'returnOnAssets': 'How efficiently a company uses its assets to generate earnings.',
-        'returnOnEquity': 'How much profit a company generates for each dollar of shareholders\' equity.',
-        'assetTurnover': 'How efficiently a company uses its assets to generate sales.',
-        'fixedAssetTurnover': 'How efficiently a company uses its fixed assets to generate sales.',
-        'debtRatio': 'Total debt / total assets. Measures leverage.',
-        'effectiveTaxRate': 'The actual rate of tax paid by a company on its earnings.',
-        'freeCashFlowOperatingCashFlowRatio': 'Free cash flow / operating cash flow. Measures cash available after capital expenditures.',
-        'freeCashFlowPerShare': 'Free cash flow available per share.',
-        'cashPerShare': 'Cash and cash equivalents per outstanding share.',
-        'enterpriseValueMultiple': 'Enterprise Value / EBITDA. Valuation multiple.',
-        'operatingCashFlowPerShare': 'Cash generated from operations per share.',
-        'operatingCashFlowSalesRatio': 'Operating cash flow / sales. Measures cash generated from each dollar of sales.',
-        'payablesTurnover': 'How many times a company pays off its accounts payable during a period.'
-    }
-    # Removed the 'icon' parameter from st.info to fix the error
-    st.info(metric_help_text.get(col_name, "No specific help text available."))
+# Use columns for better layout of inputs
+num_cols_per_row = 2
+cols = st.columns(num_cols_per_row)
 
-    st.session_state.financial_inputs[col_name] = st.number_input(
-        f"Value for {col_name}",
-        min_value=min_values.get(col_name, 0.0),
-        max_value=max_values.get(col_name, 1000.0),
-        value=st.session_state.financial_inputs.get(col_name, default_values.get(col_name, 0.0)),
-        step=step_values.get(col_name, 0.01), # Still need step for internal logic/validation even if arrows are hidden
-        key=f"fin_input_{col_name}" # Unique key for each input
-    )
+for i, col_name in enumerate(FINANCIAL_COLS): # Always show all financial inputs
+    with cols[i % num_cols_per_row]:
+        st.write(f"**{col_name}**")
+        # Add a note for percentage-like metrics
+        if 'Margin' in col_name or 'ReturnOn' in col_name or 'TaxRate' in col_name or 'Ratio' in col_name:
+            st.caption("Enter as decimal (e.g., 0.1 for 10%)")
+        
+        # Add a tooltip/help text for each metric
+        metric_help_text = {
+            'currentRatio': 'Measures short-term liquidity: current assets / current liabilities.',
+            'quickRatio': 'Measures short-term liquidity excluding inventory: (current assets - inventory) / current liabilities.',
+            'cashRatio': 'Most conservative liquidity measure: cash / current liabilities.',
+            'daysOfSalesOutstanding': 'Average number of days to collect accounts receivable.',
+            'netProfitMargin': 'Percentage of revenue left after all expenses, including taxes.',
+            'pretaxProfitMargin': 'Percentage of revenue left before taxes.',
+            'grossProfitMargin': 'Percentage of revenue left after deducting cost of goods sold.',
+            'returnOnAssets': 'How efficiently a company uses its assets to generate earnings.',
+            'returnOnEquity': 'How much profit a company generates for each dollar of shareholders\' equity.',
+            'assetTurnover': 'How efficiently a company uses its assets to generate sales.',
+            'fixedAssetTurnover': 'How efficiently a company uses its fixed assets to generate sales.',
+            'debtRatio': 'Total debt / total assets. Measures leverage.',
+            'effectiveTaxRate': 'The actual rate of tax paid by a company on its earnings.',
+            'freeCashFlowOperatingCashFlowRatio': 'Free cash flow / operating cash flow. Measures cash available after capital expenditures.',
+            'freeCashFlowPerShare': 'Free cash flow available per share.',
+            'cashPerShare': 'Cash and cash equivalents per outstanding share.',
+            'enterpriseValueMultiple': 'Enterprise Value / EBITDA. Valuation multiple.',
+            'operatingCashFlowPerShare': 'Cash generated from operations per share.',
+            'operatingCashFlowSalesRatio': 'Operating cash flow / sales. Measures cash generated from each dollar of sales.',
+            'payablesTurnover': 'How many times a company pays off its accounts payable during a period.'
+        }
+        st.info(metric_help_text.get(col_name, "No specific help text available."), icon="ℹ️")
+
+        st.session_state.financial_inputs[col_name] = st.number_input(
+            f"Value for {col_name}",
+            min_value=min_values.get(col_name, 0.0),
+            max_value=max_values.get(col_name, 1000.0),
+            value=st.session_state.financial_inputs.get(col_name, default_values.get(col_name, 0.0)),
+            step=step_values.get(col_name, 0.01),
+            key=f"fin_input_{col_name}" # Unique key for each input
+        )
 
 # Convert financial inputs to a DataFrame row
 financial_df_row = pd.DataFrame([st.session_state.financial_inputs])
 
 st.markdown("---")
 
-# --- Prediction Buttons ---
-col_predict_A, col_predict_B, col_predict_all = st.columns(3)
+# --- Sentiment Input (only if a Model B type is selected) ---
+sentiment_result = None
+if sentiment_input_needed:
+    st.header("Enter News Article (for Sentiment Analysis)")
+    st.session_state.news_article = st.text_area("Enter Company News Article Here",
+                                value=st.session_state.news_article,
+                                height=200, key="news_article_input")
+    
+    sentiment_result = analyze_sentiment(st.session_state.news_article)
+    
+    st.subheader("News Article Sentiment:")
+    st.info(f"VADER Compound Score: {sentiment_result['Avg_Compound']:.2f} (Positive: {sentiment_result['Avg_Positive']:.2f}, Neutral: {sentiment_result['Avg_Neutral']:.2f}, Negative: {sentiment_result['Avg_Negative']:.2f})")
 
-with col_predict_A:
-    if st.button("Predict with Model A", key="trigger_predict_A"):
-        st.session_state.predict_A_triggered = True
-        st.session_state.predict_B_triggered = False # Reset other trigger
-with col_predict_B:
-    if st.button("Analyze Sentiment & Predict with Model B", key="trigger_predict_B"):
-        st.session_state.predict_B_triggered = True
-        st.session_state.predict_A_triggered = False # Reset other trigger
-with col_predict_all:
-    if st.button("Predict All Models", key="trigger_predict_all", on_click=run_all_predictions):
-        pass # The on_click function handles state updates
-
-st.button("Reset All Inputs", on_click=reset_inputs)
+    if sentiment_result['category'] == "Positive":
+        st.success(f"Sentiment Category: **{sentiment_result['category']}** 😊")
+    elif sentiment_result['category'] == "Negative":
+        st.error(f"Sentiment Category: **{sentiment_result['category']}** 😠")
+    else:
+        st.info(f"Sentiment Category: **{sentiment_result['category']}** 😐")
 
 st.markdown("---")
 
-# --- Prediction Results Section ---
-st.header("Prediction Results")
-
-# Model A Prediction Display
-if st.session_state.predict_A_triggered:
-    st.subheader("1. Model A (Financial Only) Prediction")
-    if 'A' in models and 'fin' in scalers:
-        with st.spinner("Predicting with Model A..."):
-            predicted_rating_A, probabilities_A = predict_credit_rating(models['A'], scalers['fin'], financial_df_row, financial_cols)
-            
-            st.write(f"**Predicted Credit Rating for {st.session_state.company_name}:**")
-            col_rating_A_display, col_popover_A_display = st.columns([0.7, 0.3])
-            with col_rating_A_display:
-                st.success(f"**{predicted_rating_A}**")
-            with col_popover_A_display:
-                with st.popover(f"What is '{predicted_rating_A}'?"):
-                    st.write(f"**{predicted_rating_A}:** {CREDIT_RATING_DEFINITIONS.get(predicted_rating_A, 'Definition not available for this rating.')}")
-
-            st.write("---")
-            st.subheader("Prediction Probabilities:")
-            prob_df_A = pd.DataFrame(probabilities_A.items(), columns=['Rating', 'Probability'])
-            prob_df_A['Probability'] = prob_df_A['Probability'].astype(float)
-            prob_df_A = prob_df_A.sort_values(by='Probability', ascending=False)
-            prob_df_A['Probability'] = prob_df_A['Probability'].apply(lambda x: f"{x:.2%}")
-            st.dataframe(prob_df_A, hide_index=True, use_container_width=True)
-
-            st.write("---")
-            st.subheader("Key Feature Contributions (Model A):")
-            st.markdown("*(Green bars push the rating higher, red bars push it lower)*")
-            contributions_A = get_feature_contributions(models['A'], scalers['fin'], financial_df_row, financial_cols)
-            if contributions_A:
-                for feature, value, direction in contributions_A:
-                    if direction == "higher":
-                        st.markdown(f"- **{feature}**: Pushed rating **higher** (Impact: {value:.4f})")
-                    else:
-                        st.markdown(f"- **{feature}**: Pushed rating **lower** (Impact: {value:.4f})")
-                
-                fig_A = plot_shap_contributions_chart(contributions_A, f"Top Feature Contributions for {st.session_state.company_name} (Model A)")
-                if fig_A:
-                    st.pyplot(fig_A)
-                    plt.close(fig_A)
-                else:
-                    st.info("No sufficient data to plot feature contributions for Model A.")
-            else:
-                st.info("Could not determine feature contributions for Model A.")
-    else:
-        st.warning("Model A or its scaler not loaded. Cannot perform prediction.")
-    st.markdown("---")
-
-
-# Model B Prediction Display
-if st.session_state.predict_B_triggered:
-    st.subheader("2. Model B (Financial + Sentiment) Prediction")
-    news_article_for_B = st.session_state.news_article # Use the current news article from session state
-    sentiment_result_B = analyze_sentiment(news_article_for_B)
+# --- Prediction Button ---
+if st.button(f"Predict Credit Rating with {selected_model_name}", key="predict_button"):
     
-    st.write("News Article Sentiment:")
-    st.info(f"VADER Compound Score: {sentiment_result_B['Avg_Compound']:.2f} (Positive: {sentiment_result_B['Avg_Positive']:.2f}, Neutral: {sentiment_result_B['Avg_Neutral']:.2f}, Negative: {sentiment_result_B['Avg_Negative']:.2f})")
-
-    if sentiment_result_B['category'] == "Positive":
-        st.success(f"Sentiment Category: **{sentiment_result_B['category']}** 😊")
-    elif sentiment_result_B['category'] == "Negative":
-        st.error(f"Sentiment Category: **{sentiment_result_B['category']}** 😠")
-    else:
-        st.info(f"Sentiment Category: **{sentiment_result_B['category']}** 😐")
-
-    if 'B' in models and 'all' in scalers:
-        avg_positive = sentiment_result_B['Avg_Positive']
-        avg_neutral = sentiment_result_B['Avg_Neutral']
-        avg_negative = sentiment_result_B['Avg_Negative']
-        avg_compound = sentiment_result_B['Avg_Compound']
+    # Prepare input data based on selected model type
+    if sentiment_input_needed:
+        if sentiment_result is None: # Should not happen if sentiment_input_needed is True
+            st.error("Sentiment analysis could not be performed. Please ensure a news article is entered.")
+            st.stop()
 
         all_inputs = {**st.session_state.financial_inputs,
-                      'Avg_Positive': avg_positive,
-                      'Avg_Neutral': avg_neutral,
-                      'Avg_Negative': avg_negative,
-                      'Avg_Compound': avg_compound}
-        
-        combined_df_row = pd.DataFrame([all_inputs])[all_cols]
-        
-        with st.spinner("Predicting with Model B..."):
-            predicted_rating_B, probabilities_B = predict_credit_rating(models['B'], scalers['all'], combined_df_row, all_cols)
-            
-            st.write(f"**Predicted Credit Rating for {st.session_state.company_name}:**")
-            col_rating_B_display, col_popover_B_display = st.columns([0.7, 0.3])
-            with col_rating_B_display:
-                st.success(f"**{predicted_rating_B}**")
-            with col_popover_B_display:
-                with st.popover(f"What is '{predicted_rating_B}'?"):
-                    st.write(f"**{predicted_rating_B}:** {CREDIT_RATING_DEFINITIONS.get(predicted_rating_B, 'Definition not available for this rating.')}")
-
-            st.write("---")
-            st.subheader("Prediction Probabilities:")
-            prob_df_B = pd.DataFrame(probabilities_B.items(), columns=['Rating', 'Probability'])
-            prob_df_B['Probability'] = prob_df_B['Probability'].astype(float)
-            prob_df_B = prob_df_B.sort_values(by='Probability', ascending=False)
-            prob_df_B['Probability'] = prob_df_B['Probability'].apply(lambda x: f"{x:.2%}")
-            st.dataframe(prob_df_B, hide_index=True, use_container_width=True)
-
-            st.write("---")
-            st.subheader("Key Feature Contributions (Model B):")
-            st.markdown("*(Green bars push the rating higher, red bars push it lower)*")
-            contributions_B = get_feature_contributions(models['B'], scalers['all'], combined_df_row, all_cols)
-            if contributions_B:
-                for feature, value, direction in contributions_B:
-                    if direction == "higher":
-                        st.markdown(f"- **{feature}**: Pushed rating **higher** (Impact: {value:.4f})")
-                    else:
-                        st.markdown(f"- **{feature}**: Pushed rating **lower** (Impact: {value:.4f})")
-                
-                fig_B = plot_shap_contributions_chart(contributions_B, f"Top Feature Contributions for {st.session_state.company_name} (Model B)")
-                if fig_B:
-                    st.pyplot(fig_B)
-                    plt.close(fig_B)
-                else:
-                    st.info("No sufficient data to plot feature contributions for Model B.")
-            else:
-                st.info("Could not determine feature contributions for Model B.")
+                      'Avg_Positive': sentiment_result['Avg_Positive'],
+                      'Avg_Neutral': sentiment_result['Avg_Neutral'],
+                      'Avg_Negative': sentiment_result['Avg_Negative'],
+                      'Avg_Compound': sentiment_result['Avg_Compound']}
+        input_df_for_prediction = pd.DataFrame([all_inputs])
     else:
-        st.warning("Model B or its scaler not loaded. Cannot perform prediction.")
+        input_df_for_prediction = financial_df_row.copy() # Only financial data
+
+    # Ensure columns are in the correct order as expected by the scaler and model
+    input_df_for_prediction = input_df_for_prediction[required_features]
+
+    with st.spinner(f"Predicting with {selected_model_name}..."):
+        predicted_rating, probabilities = predict_credit_rating(selected_model, selected_scaler, input_df_for_prediction, required_features)
+        
+        st.header("3. Prediction Result")
+        st.success(f"The predicted credit rating for {st.session_state.company_name} using {selected_model_name} is: **{predicted_rating}**")
+
+        st.subheader("Prediction Probabilities:")
+        prob_df = pd.DataFrame(probabilities.items(), columns=['Rating', 'Probability'])
+        prob_df['Probability'] = prob_df['Probability'].astype(float) # Ensure numeric for sorting
+        prob_df = prob_df.sort_values(by='Probability', ascending=False)
+        prob_df['Probability'] = prob_df['Probability'].apply(lambda x: f"{x:.2%}") # Format as percentage
+        st.dataframe(prob_df, hide_index=True, use_container_width=True)
+
+        st.write("---")
+        st.subheader("Key Feature Contributions (SHAP Values):")
+        st.markdown("*(Green bars indicate a positive contribution to the predicted rating; red bars indicate a negative contribution.)*")
+        
+        # Store last prediction details in session state for SHAP plotting
+        st.session_state.last_predicted_model = selected_model
+        st.session_state.last_predicted_rating = predicted_rating
+        st.session_state.last_input_df = input_df_for_prediction
+        st.session_state.last_feature_cols = required_features
+        st.session_state.last_scaler = selected_scaler
+
+        # Call the SHAP plotting function
+        plot_shap_contributions(
+            st.session_state.last_predicted_model,
+            st.session_state.last_scaler,
+            st.session_state.last_input_df,
+            st.session_state.last_feature_cols,
+            st.session_state.last_predicted_rating
+        )
+
+# --- Reset Button (placed at the bottom for accessibility) ---
+st.markdown("---")
+st.button("Reset All Inputs", on_click=reset_inputs)
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant.")
