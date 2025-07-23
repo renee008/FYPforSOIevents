@@ -299,15 +299,22 @@ def plot_shap_contributions(model, scaler, input_df, feature_columns, predicted_
     Calculates and plots SHAP values for a single prediction.
     """
     try:
-        input_df_reindexed = input_df[feature_columns]
-        scaled_data = scaler.transform(input_df_reindexed)
+        # Ensure input_df is a DataFrame and extract values as NumPy array
+        input_data_for_scaler = input_df[feature_columns].values
+        
+        # Ensure input_data_for_scaler is 2D (1, n_features) before scaling
+        if input_data_for_scaler.ndim == 1:
+            input_data_for_scaler = input_data_for_scaler.reshape(1, -1)
 
-        # Ensure scaled_data is 2D (1, n_features) for SHAP
+        scaled_data = scaler.transform(input_data_for_scaler)
+
+        # Ensure scaled_data is 2D (1, n_features) for SHAP, even after scaling
         if scaled_data.ndim == 1:
             scaled_data = scaled_data.reshape(1, -1)
         
-        # Ensure scaled_data is a numpy array for SHAP explainer
-        scaled_data = np.asarray(scaled_data)
+        # Debugging: Print shape and type of data just before SHAP
+        st.write(f"DEBUG: {model_label} - Type of scaled_data before SHAP: {type(scaled_data)}")
+        st.write(f"DEBUG: {model_label} - Shape of scaled_data before SHAP: {scaled_data.shape}")
 
         # Initialize SHAP explainer based on model type
         if isinstance(model, CatBoostClassifier) or isinstance(model, RandomForestClassifier) or \
@@ -734,6 +741,7 @@ st.button("Reset All Inputs", on_click=reset_inputs)
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant.")
+
 
 
 
