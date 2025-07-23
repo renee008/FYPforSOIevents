@@ -107,12 +107,12 @@ def load_models_and_scalers():
         scalers['CatBoost Model B (Financial + Sentiment)'] = joblib.load('renee_scaler_all.pkl')
 
         # Load RandomForest Model A (Financial Only) and its scaler (ath_scaler_financial.pkl)
-        rf_model_A = joblib.load('RandomForest_modelA.pkl')
+        rf_model_A = joblib.load('ath_RandomForest_modelA.pkl')
         models['RandomForest Model A (Financial Only)'] = rf_model_A
         scalers['RandomForest Model A (Financial Only)'] = joblib.load('ath_scaler_financial.pkl')
 
         # Load RandomForest Model B (Financial + Sentiment) and its scaler (ath_scaler_all.pkl)
-        rf_model_B = joblib.load('RandomForest_modelB.pkl')
+        rf_model_B = joblib.load('ath_RandomForest_modelB.pkl')
         models['RandomForest Model B (Financial + Sentiment)'] = rf_model_B
         scalers['RandomForest Model B (Financial + Sentiment)'] = joblib.load('ath_scaler_all.pkl')
 
