@@ -54,6 +54,37 @@ st.markdown(
     input[type=number] {
         -moz-appearance: textfield; /* Firefox */
     }
+
+    /* --- Custom CSS for Selectbox (Dropdown) --- */
+    /* Target the container of the selectbox */
+    .st-emotion-cache-1n76tmc { /* This class might change slightly with Streamlit updates */
+        background-color: #e8f5e9; /* Light green background */
+        border-radius: 12px;
+        border: 1px solid #a5d6a7; /* Green border */
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+    }
+    /* Target the actual dropdown button */
+    .st-emotion-cache-1n76tmc > div > div > button {
+        background-color: #c8e6c9; /* Slightly darker green for the button */
+        color: #1b5e20; /* Dark green text */
+        font-weight: 700;
+        border-radius: 10px;
+        border: none;
+    }
+    /* Target the options list when opened */
+    .st-emotion-cache-1n76tmc .st-emotion-cache-1x0x577 { /* This targets the options container */
+        background-color: #f1f8e9; /* Very light green for options background */
+        border-radius: 8px;
+        border: 1px solid #a5d6a7;
+    }
+    /* Target individual options */
+    .st-emotion-cache-1n76tmc .st-emotion-cache-1x0x577 div {
+        color: #333; /* Dark text for options */
+    }
+    /* Hover state for options */
+    .st-emotion-cache-1n76tmc .st-emotion-cache-1x0x577 div:hover {
+        background-color: #dcedc8; /* Lighter green on hover */
+    }
     </style>
     """,
     unsafe_allow_html=True
@@ -143,7 +174,7 @@ def load_models_and_scalers():
         label_encoder = joblib.load('rating_label_encoder.pkl')
 
 
-        st.success("All models and scalers loaded successfully!")
+        st.success("All individual models and scalers loaded successfully!")
     except FileNotFoundError as e:
         st.error(f"Error loading model or scaler file: {e}. Please ensure all model and scaler files are in the same directory.")
         st.stop() # Stop the app if essential files are missing
@@ -155,15 +186,12 @@ def load_models_and_scalers():
 # Load models and scalers at the start of the app
 models, scalers, label_encoder = load_models_and_scalers()
 
-# --- Prediction Function ---
-def predict_credit_rating(model, scaler, input_df, feature_columns, label_encoder) -> tuple:
+# --- Prediction Function for a Single Model ---
+def _predict_single_model(model, scaler, input_df, feature_columns, label_encoder) -> tuple:
     """
-    Predicts the credit rating and its probabilities using the given model and scaler.
-    Returns (predicted_rating, probabilities_dict).
+    Predicts the credit rating and its probabilities using a single given model and scaler.
+    Returns (predicted_rating_str, probabilities_dict).
     """
-    if model is None or scaler is None or label_encoder is None:
-        return "Model, scaler, or label encoder not loaded. Cannot predict credit rating.", {}
-
     try:
         input_df_reindexed = input_df[feature_columns]
         scaled_data = scaler.transform(input_df_reindexed)
@@ -173,8 +201,8 @@ def predict_credit_rating(model, scaler, input_df, feature_columns, label_encode
             predicted_rating_str = model.predict(scaled_data)[0] # CatBoost returns string directly
             probabilities = model.predict_proba(scaled_data)[0]
             class_names = model.classes_ # CatBoost stores class names
-        elif isinstance(model, RandomForestClassifier):
-            predicted_class_idx = model.predict(scaled_data)[0] # RandomForest returns numerical label
+        elif isinstance(model, RandomForestClassifier) or isinstance(model, xgb.XGBClassifier):
+            predicted_class_idx = model.predict(scaled_data)[0] # These return numerical label
             predicted_rating_str = label_encoder.inverse_transform([int(predicted_class_idx)])[0] # Convert to string
             probabilities = model.predict_proba(scaled_data)[0]
             class_names = label_encoder.classes_ # Use label encoder classes for consistency
@@ -182,11 +210,6 @@ def predict_credit_rating(model, scaler, input_df, feature_columns, label_encode
             probabilities = model.predict(scaled_data)[0]
             predicted_class_idx = np.argmax(probabilities)
             predicted_rating_str = label_encoder.inverse_transform([predicted_class_idx])[0]
-            class_names = label_encoder.classes_ # Use label encoder classes for consistency
-        elif isinstance(model, xgb.XGBClassifier):
-            predicted_class_idx = model.predict(scaled_data)[0] # XGBoost returns numerical label
-            predicted_rating_str = label_encoder.inverse_transform([int(predicted_class_idx)])[0] # Convert to string
-            probabilities = model.predict_proba(scaled_data)[0]
             class_names = label_encoder.classes_ # Use label encoder classes for consistency
         else:
             return "Unsupported model type.", {}
@@ -196,7 +219,7 @@ def predict_credit_rating(model, scaler, input_df, feature_columns, label_encode
         return str(predicted_rating_str), probabilities_dict
 
     except Exception as e:
-        st.error(f"Error during credit rating prediction: {e}")
+        # st.error(f"Error during single model prediction: {e}") # Suppress for multi-model runs
         return "Prediction failed.", {}
 
 # --- Sentiment Analysis Function ---
@@ -253,7 +276,7 @@ CREDIT_RATING_DEFINITIONS = {
 }
 
 # --- SHAP Explainability Function ---
-def plot_shap_contributions(model, scaler, input_df, feature_columns, predicted_rating_str):
+def plot_shap_contributions(model, scaler, input_df, feature_columns, predicted_rating_str, model_label):
     """
     Calculates and plots SHAP values for a single prediction.
     """
@@ -266,7 +289,7 @@ def plot_shap_contributions(model, scaler, input_df, feature_columns, predicted_
            isinstance(model, lgb.Booster) or isinstance(model, xgb.XGBClassifier):
             explainer = shap.TreeExplainer(model)
         else:
-            st.warning("SHAP explanation not supported for this model type.")
+            st.warning(f"SHAP explanation not supported for model type: {type(model).__name__}.")
             return
 
         shap_values = explainer.shap_values(scaled_data)
@@ -274,23 +297,14 @@ def plot_shap_contributions(model, scaler, input_df, feature_columns, predicted_
         # Determine which SHAP values to use for plotting based on predicted class
         # For multi-class, shap_values is a list of arrays (one per class).
         # We need the SHAP values for the *predicted* class.
-        if isinstance(model, CatBoostClassifier) or isinstance(model, RandomForestClassifier) or \
-           isinstance(model, lgb.Booster) or isinstance(model, xgb.XGBClassifier):
-            # For these tree-based models, if they output numerical labels, use label_encoder
-            # If CatBoost outputs string labels directly, its .classes_ will match
-            if hasattr(model, 'classes_'): # CatBoost, RandomForest
-                try:
-                    predicted_class_idx = list(model.classes_).index(predicted_rating_str)
-                except ValueError:
-                    # Fallback for models where classes_ might not directly contain the string,
-                    # but label_encoder is the source of truth for numerical mapping.
-                    predicted_class_idx = label_encoder.transform([predicted_rating_str])[0]
-            else: # LightGBM, XGBoost (which typically output numerical indices)
-                predicted_class_idx = label_encoder.transform([predicted_rating_str])[0]
-        else:
-            st.warning("Could not determine predicted class index for SHAP explanation. Using first class SHAP values.")
-            predicted_class_idx = 0
-
+        if isinstance(model, CatBoostClassifier): # CatBoost model.predict returns the string label
+            try:
+                predicted_class_idx = list(model.classes_).index(predicted_rating_str)
+            except ValueError:
+                predicted_class_idx = label_encoder.transform([predicted_rating_str])[0] # Fallback to label encoder
+        else: # RandomForest, LightGBM, XGBoost (which typically output numerical indices)
+            predicted_class_idx = label_encoder.transform([predicted_rating_str])[0]
+        
         # Ensure predicted_class_idx is an integer for indexing
         predicted_class_idx = int(predicted_class_idx)
 
@@ -320,7 +334,7 @@ def plot_shap_contributions(model, scaler, input_df, feature_columns, predicted_
         colors = ['#ef5350' if d == 'negative' else '#66bb6a' for d in shap_df['Direction']] # Red for negative, green for positive
         ax.barh(shap_df['Feature'], shap_df['SHAP Value'], color=colors)
         ax.set_xlabel("SHAP Value (Impact on Prediction)")
-        ax.set_title(f"Feature Contributions for Predicted Rating: {predicted_rating_str}")
+        ax.set_title(f"Feature Contributions for Predicted Rating: {predicted_rating_str} ({model_label})")
         plt.tight_layout()
         st.pyplot(fig)
         plt.close(fig) # Close the figure to free memory
@@ -334,7 +348,7 @@ def plot_shap_contributions(model, scaler, input_df, feature_columns, predicted_
 
 
     except Exception as e:
-        st.error(f"Could not generate SHAP plot: {e}. This might happen if the model or data structure is not fully compatible with SHAP's TreeExplainer or if there's an issue with the input data.")
+        st.error(f"Could not generate SHAP plot for {model_label}: {e}. This might happen if the model or data structure is not fully compatible with SHAP's TreeExplainer or if there's an issue with the input data.")
         st.info("Ensure the model was trained with the same feature names and order, and that the SHAP library is compatible with your model version.")
 
 
@@ -386,27 +400,11 @@ if 'news_article' not in st.session_state:
     st.session_state.news_article = "Example: The company announced record loss this quarter, exceeding all expectations and leading to a significant stock price decrease. However, concerns about market competition are rising."
 if 'company_name' not in st.session_state:
     st.session_state.company_name = "Example Corp"
-if 'last_predicted_model' not in st.session_state:
-    st.session_state.last_predicted_model = None
-if 'last_predicted_rating' not in st.session_state:
-    st.session_state.last_predicted_rating = None
-if 'last_input_df' not in st.session_state:
-    st.session_state.last_input_df = None
-if 'last_feature_cols' not in st.session_state:
-    st.session_state.last_feature_cols = None
-if 'last_scaler' not in st.session_state:
-    st.session_state.last_scaler = None
-
 
 def reset_inputs():
     st.session_state.financial_inputs = {col: default_values.get(col, 0.0) for col in FINANCIAL_COLS}
     st.session_state.news_article = "Example: The company announced record loss this quarter, exceeding all expectations and leading to a significant stock price decrease. However, concerns about market competition are rising."
     st.session_state.company_name = "Example Corp"
-    st.session_state.last_predicted_model = None
-    st.session_state.last_predicted_rating = None
-    st.session_state.last_input_df = None
-    st.session_state.last_feature_cols = None
-    st.session_state.last_scaler = None
 
 
 # --- Main UI Layout ---
@@ -425,7 +423,7 @@ with tab_about:
     * **Financial Metrics (Quantitative):** This involves analyzing a company's balance sheet, income statement, and cash flow statement. Key ratios like liquidity (e.g., current ratio), profitability (e.g., gross profit margin), leverage (e.g., debt ratio), and efficiency (e.g., days of sales outstanding) are vital.
     * **News Sentiment (Qualitative):** Public sentiment and news coverage can significantly impact a company's perceived risk. Positive news might signal stability and growth, while negative news could indicate potential challenges.
 
-    This application uses eight machine learning models:
+    This application uses eight machine learning models, grouped into 'Model A' (Financial Only) and 'Model B' (Financial + Sentiment):
     * **CatBoost Model A (Financial Only):** Predicts credit ratings based solely on a set of key financial metrics using a CatBoost Classifier.
     * **CatBoost Model B (Financial + Sentiment):** Combines financial metrics with sentiment analysis from news articles using a CatBoost Classifier.
     * **RandomForest Model A (Financial Only):** Predicts credit ratings based solely on a set of key financial metrics using a RandomForest Classifier.
@@ -440,11 +438,11 @@ with tab_how_to_use:
     st.markdown("""
     ### How to Use This Website
     1.  **Enter Company Name:** Provide the name of the company you are analyzing.
-    2.  **Select a Model:** Choose one of the eight available models from the dropdown.
+    2.  **Select a Model:** Choose one of the individual models, or an "All Models" option, from the dropdown.
     3.  **Input Financial Metrics:** Fill in the values for the various financial ratios. Enter percentage-like metrics (e.g., margins, returns) as decimals (e.g., `0.10` for 10%).
-    4.  **Enter News Article (for Model B types):** If you select a "Financial + Sentiment" model (Model B), provide a relevant news article.
+    4.  **Enter News Article (for Model B types):** If you select any "Model B" option (individual or "All Model B"), provide a relevant news article.
     5.  **Predict:** Click the "Predict Credit Rating" button to get a prediction and feature contributions.
-    6.  **Review Results:** The predicted rating, probabilities, and key feature contributions will appear.
+    6.  **Review Results:** The predicted rating(s), probabilities, and key feature contributions will appear. For "All Models" options, results will be organized into expandable sections.
     7.  **Reset Inputs:** Use the "Reset All Inputs" button to clear the form and start fresh.
     """)
 
@@ -458,23 +456,56 @@ st.markdown("---")
 
 # --- Model Selection ---
 st.header("Select Prediction Model")
+
+# Define the model options for the selectbox
+model_options = list(models.keys())
+model_options.sort() # Sort individual models alphabetically
+model_options_grouped = [
+    "--- Individual Models ---"
+] + model_options + [
+    "--- Compare Models ---",
+    "All Model A (Financial Only)",
+    "All Model B (Financial + Sentiment)",
+    "All Models (A & B)"
+]
+
 selected_model_name = st.selectbox(
     "Choose a model for prediction:",
-    list(models.keys()), # This will list all eight models
+    model_options_grouped,
     key="model_selector"
 )
-selected_model = models[selected_model_name]
-selected_scaler = scalers[selected_model_name]
 
-# Determine which features are needed for the selected model
-if "Financial Only" in selected_model_name:
+# Determine which features are needed based on the selected option
+sentiment_input_needed = False
+required_features = [] # Initialize with empty list
+
+if selected_model_name in models: # An individual model is selected
+    selected_model = models[selected_model_name]
+    selected_scaler = scalers[selected_model_name]
+    if "Financial Only" in selected_model_name:
+        required_features = FINANCIAL_COLS
+        st.info(f"You selected '{selected_model_name}'. This model uses only financial metrics.")
+    else: # Implies "Financial + Sentiment"
+        required_features = ALL_COLS
+        st.info(f"You selected '{selected_model_name}'. This model uses both financial metrics and news sentiment.")
+        sentiment_input_needed = True
+elif selected_model_name == "All Model A (Financial Only)":
     required_features = FINANCIAL_COLS
-    st.info(f"You selected '{selected_model_name}'. This model uses only financial metrics.")
+    st.info("You selected 'All Model A'. This will run all four 'Financial Only' models.")
     sentiment_input_needed = False
-else: # Implies "Financial + Sentiment"
+elif selected_model_name == "All Model B (Financial + Sentiment)":
     required_features = ALL_COLS
-    st.info(f"You selected '{selected_model_name}'. This model uses both financial metrics and news sentiment.")
+    st.info("You selected 'All Model B'. This will run all four 'Financial + Sentiment' models.")
     sentiment_input_needed = True
+elif selected_model_name == "All Models (A & B)":
+    required_features = ALL_COLS # All models use all features eventually for Model B types
+    st.info("You selected 'All Models (A & B)'. This will run all eight models.")
+    sentiment_input_needed = True
+else: # Placeholder or separator selected
+    selected_model = None
+    selected_scaler = None
+    st.warning("Please select a valid model or comparison option.")
+
 
 st.markdown("---")
 
@@ -532,7 +563,7 @@ financial_df_row = pd.DataFrame([st.session_state.financial_inputs])
 
 st.markdown("---")
 
-# --- Sentiment Input (only if a Model B type is selected) ---
+# --- Sentiment Input (only if a Model B type or "All Models" is selected) ---
 sentiment_result = None
 if sentiment_input_needed:
     st.header("Enter News Article (for Sentiment Analysis)")
@@ -555,55 +586,124 @@ if sentiment_input_needed:
 st.markdown("---")
 
 # --- Prediction Button ---
-if st.button(f"Predict Credit Rating with {selected_model_name}", key="predict_button"):
+if st.button(f"Predict Credit Rating(s)", key="predict_button"):
     
     # Prepare input data based on selected model type
-    if sentiment_input_needed:
-        if sentiment_result is None: # Should not happen if sentiment_input_needed is True
-            st.error("Sentiment analysis could not be performed. Please ensure a news article is entered.")
-            st.stop()
+    current_financial_inputs_df = pd.DataFrame([st.session_state.financial_inputs])
+    current_sentiment_inputs_dict = sentiment_result # This will be None if sentiment_input_needed is False
 
-        all_inputs = {**st.session_state.financial_inputs,
-                      'Avg_Positive': sentiment_result['Avg_Positive'],
-                      'Avg_Neutral': sentiment_result['Avg_Neutral'],
-                      'Avg_Negative': sentiment_result['Avg_Negative'],
-                      'Avg_Compound': sentiment_result['Avg_Compound']}
-        input_df_for_prediction = pd.DataFrame([all_inputs])
-    else:
-        input_df_for_prediction = financial_df_row.copy() # Only financial data
+    # Validate inputs before proceeding
+    if not all(val is not None for val in st.session_state.financial_inputs.values()):
+        st.warning("Please fill in all financial metrics.")
+        st.stop()
+    if sentiment_input_needed and not st.session_state.news_article:
+        st.warning("Please paste a news article for sentiment analysis.")
+        st.stop()
+    if selected_model_name.startswith("---"): # If a separator is selected
+        st.warning("Please select a valid model or comparison option from the dropdown.")
+        st.stop()
 
-    # Ensure columns are in the correct order as expected by the scaler and model
-    input_df_for_prediction = input_df_for_prediction[required_features]
+    st.header("3. Prediction Result(s)")
 
-    with st.spinner(f"Predicting with {selected_model_name}..."):
-        predicted_rating, probabilities = predict_credit_rating(selected_model, selected_scaler, input_df_for_prediction, required_features, label_encoder)
+    if selected_model_name in models: # Individual model prediction
+        input_df_for_prediction = current_financial_inputs_df.copy()
+        if sentiment_input_needed:
+            all_inputs = {**st.session_state.financial_inputs, **current_sentiment_inputs_dict}
+            input_df_for_prediction = pd.DataFrame([all_inputs])
         
-        st.header("3. Prediction Result")
-        st.success(f"The predicted credit rating for {st.session_state.company_name} using {selected_model_name} is: **{predicted_rating}**")
+        input_df_for_prediction = input_df_for_prediction[required_features] # Ensure correct order
 
-        with st.popover(f"What is '{predicted_rating}'?"):
-            st.write(f"**{predicted_rating}:** {CREDIT_RATING_DEFINITIONS.get(predicted_rating, 'Definition not available.')}")
+        with st.spinner(f"Predicting with {selected_model_name}..."):
+            predicted_rating, probabilities = _predict_single_model(selected_model, selected_scaler, input_df_for_prediction, required_features, label_encoder)
+            
+            st.success(f"The predicted credit rating for {st.session_state.company_name} using **{selected_model_name}** is: **{predicted_rating}**")
 
-        st.write("---")
-        st.subheader("Prediction Probabilities:")
-        prob_df = pd.DataFrame(probabilities.items(), columns=['Rating', 'Probability'])
-        prob_df['Probability'] = prob_df['Probability'].astype(float) # Ensure numeric for sorting
-        prob_df = prob_df.sort_values(by='Probability', ascending=False)
-        prob_df['Probability'] = prob_df['Probability'].apply(lambda x: f"{x:.2%}") # Format as percentage
-        st.dataframe(prob_df, hide_index=True, use_container_width=True)
+            with st.popover(f"What is '{predicted_rating}'?"):
+                st.write(f"**{predicted_rating}:** {CREDIT_RATING_DEFINITIONS.get(predicted_rating, 'Definition not available.')}")
 
-        st.write("---")
-        st.subheader("Key Feature Contributions (SHAP Values):")
-        st.markdown("*(Green bars indicate a positive contribution to the predicted rating; red bars indicate a negative contribution.)*")
+            st.write("---")
+            st.subheader("Prediction Probabilities:")
+            prob_df = pd.DataFrame(probabilities.items(), columns=['Rating', 'Probability'])
+            prob_df['Probability'] = prob_df['Probability'].astype(float) # Ensure numeric for sorting
+            prob_df = prob_df.sort_values(by='Probability', ascending=False)
+            prob_df['Probability'] = prob_df['Probability'].apply(lambda x: f"{x:.2%}") # Format as percentage
+            st.dataframe(prob_df, hide_index=True, use_container_width=True)
+
+            st.write("---")
+            st.subheader("Key Feature Contributions (SHAP Values):")
+            st.markdown("*(Green bars indicate a positive contribution to the predicted rating; red bars indicate a negative contribution.)*")
+            
+            plot_shap_contributions(
+                selected_model,
+                selected_scaler,
+                input_df_for_prediction,
+                required_features,
+                predicted_rating,
+                selected_model_name
+            )
+
+    else: # "All Models" options
+        st.info("Running multiple models. Results will be displayed below.")
+        all_results = []
+        models_to_run = []
+
+        if selected_model_name == "All Model A (Financial Only)":
+            models_to_run = [name for name in models.keys() if "Model A" in name]
+        elif selected_model_name == "All Model B (Financial + Sentiment)":
+            models_to_run = [name for name in models.keys() if "Model B" in name]
+        elif selected_model_name == "All Models (A & B)":
+            models_to_run = list(models.keys())
         
-        # Call the SHAP plotting function
-        plot_shap_contributions(
-            selected_model,
-            selected_scaler,
-            input_df_for_prediction,
-            required_features,
-            predicted_rating
-        )
+        # Sort models_to_run for consistent display
+        models_to_run.sort()
+
+        for model_name_to_run in models_to_run:
+            model = models[model_name_to_run]
+            scaler = scalers[model_name_to_run]
+
+            is_sentiment_model = "Financial + Sentiment" in model_name_to_run
+            
+            input_df_for_prediction = current_financial_inputs_df.copy()
+            features_for_model = FINANCIAL_COLS
+
+            if is_sentiment_model:
+                all_inputs = {**st.session_state.financial_inputs, **current_sentiment_inputs_dict}
+                input_df_for_prediction = pd.DataFrame([all_inputs])
+                features_for_model = ALL_COLS
+            
+            input_df_for_prediction = input_df_for_prediction[features_for_model] # Ensure correct order
+
+            with st.spinner(f"Predicting with {model_name_to_run}..."):
+                predicted_rating, probabilities = _predict_single_model(model, scaler, input_df_for_prediction, features_for_model, label_encoder)
+                
+                if predicted_rating != "Prediction failed.":
+                    with st.expander(f"Results for **{model_name_to_run}**"):
+                        st.success(f"Predicted Credit Rating: **{predicted_rating}**")
+                        with st.popover(f"What is '{predicted_rating}'?"):
+                            st.write(f"**{predicted_rating}:** {CREDIT_RATING_DEFINITIONS.get(predicted_rating, 'Definition not available.')}")
+
+                        st.write("---")
+                        st.subheader("Prediction Probabilities:")
+                        prob_df = pd.DataFrame(probabilities.items(), columns=['Rating', 'Probability'])
+                        prob_df['Probability'] = prob_df['Probability'].astype(float)
+                        prob_df = prob_df.sort_values(by='Probability', ascending=False)
+                        prob_df['Probability'] = prob_df['Probability'].apply(lambda x: f"{x:.2%}")
+                        st.dataframe(prob_df, hide_index=True, use_container_width=True)
+
+                        st.write("---")
+                        st.subheader("Key Feature Contributions (SHAP Values):")
+                        st.markdown("*(Green bars indicate a positive contribution to the predicted rating; red bars indicate a negative contribution.)*")
+                        plot_shap_contributions(
+                            model,
+                            scaler,
+                            input_df_for_prediction,
+                            features_for_model,
+                            predicted_rating,
+                            model_name_to_run
+                        )
+                else:
+                    st.error(f"Prediction failed for {model_name_to_run}.")
+
 
 # --- Reset Button (placed at the bottom for accessibility) ---
 st.markdown("---")
@@ -611,3 +711,4 @@ st.button("Reset All Inputs", on_click=reset_inputs)
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant.")
+
