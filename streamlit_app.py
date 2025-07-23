@@ -99,7 +99,7 @@ def load_models_and_scalers():
         cat_model_A = CatBoostClassifier()
         cat_model_A.load_model('CatboostML.modelA.cbm')
         models['CatBoost Model A (Financial Only)'] = cat_model_A
-        scalers['CatBoost Model A (Financial Only)'] = joblib.load('renee_scaler_fin.pkl')
+        scalers['CatBoost Model A (Financial Only)'] = joblib.load('renee_scaler_financial.pkl')
 
         # Load CatBoost Model B (Financial + Sentiment) and its scaler (renee_scaler_all.pkl)
         cat_model_B = CatBoostClassifier()
