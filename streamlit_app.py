@@ -23,7 +23,7 @@ st.markdown(
     """
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
-    html, body, [class*="css"] {
+    html, body, [class*="css"] {\
         font-family: 'Inter', sans-serif;
     }
     .stButton>button {
@@ -345,16 +345,16 @@ def analyze_multiple_urls_sentiment(urls: list[str]) -> tuple[dict, dict]:
 
     for url in urls:
         if url.strip(): # Ensure URL is not empty
-            sentiment_for_url, extracted_text = fetch_and_analyze_single_url(url.strip())
+            sentiment_for_url, _ = fetch_and_analyze_single_url(url.strip()) # Don't need extracted_text here
             
             if sentiment_for_url and 'Avg_Compound' in sentiment_for_url: # Successfully got sentiment scores
                 all_pos_scores.append(sentiment_for_url['Avg_Positive'])
                 all_neu_scores.append(sentiment_for_url['Avg_Neutral'])
                 all_neg_scores.append(sentiment_for_url['Avg_Negative'])
                 all_comp_scores.append(sentiment_for_url['Avg_Compound'])
-                detailed_results[url] = {"status": "Success", "sentiment": sentiment_for_url, "extracted_text": extracted_text}
+                detailed_results[url] = {"status": "Success", "sentiment": sentiment_for_url}
             else:
-                detailed_results[url] = {"status": "Failed", "error": extracted_text} # extracted_text contains error message
+                detailed_results[url] = {"status": "Failed", "error": _} # _ contains error message
 
     if not all_comp_scores: # No URLs were successfully analyzed
         return ({'Avg_Positive': 0.0, 'Avg_Neutral': 1.0, 'Avg_Negative': 0.0, 'Avg_Compound': 0.0}, detailed_results)
@@ -502,7 +502,7 @@ step_values = {
 if 'financial_inputs' not in st.session_state:
     st.session_state.financial_inputs = {col: default_values.get(col, 0.0) for col in FINANCIAL_COLS}
 if 'news_article_urls' not in st.session_state: # Changed to store multiple URLs
-    st.session_state.news_article_urls = "https://www.reuters.com/markets/companies/MSFT.O/news/\nhttps://www.cnbc.com/quotes/MSFT/news/" # Example URLs, one per line
+    st.session_state.news_article_urls = "" # Initialize as blank
 if 'company_name' not in st.session_state:
     st.session_state.company_name = "Example Corp"
 if 'last_extracted_texts' not in st.session_state: # To store extracted texts for display
@@ -511,7 +511,7 @@ if 'last_extracted_texts' not in st.session_state: # To store extracted texts fo
 
 def reset_inputs():
     st.session_state.financial_inputs = {col: default_values.get(col, 0.0) for col in FINANCIAL_COLS}
-    st.session_state.news_article_urls = "https://www.reuters.com/markets/companies/MSFT.O/news/\nhttps://www.cnbc.com/quotes/MSFT/news/" # Reset to example URLs
+    st.session_state.news_article_urls = "" # Reset to blank
     st.session_state.company_name = "Example Corp"
     st.session_state.last_extracted_texts = {}
 
@@ -706,11 +706,6 @@ if sentiment_input_needed:
                     if result["status"] == "Success":
                         st.success(f"  Status: Success")
                         st.write(f"  Sentiment: Compound {result['sentiment']['Avg_Compound']:.2f} (Category: {result['sentiment']['category'] if 'category' in result['sentiment'] else 'N/A'})")
-                        if result['extracted_text']:
-                            st.caption("Extracted Text Snippet:")
-                            st.code(result['extracted_text'][:500] + "..." if len(result['extracted_text']) > 500 else result['extracted_text'])
-                        else:
-                            st.info("  No relevant text extracted from this URL.")
                     else:
                         st.error(f"  Status: Failed - {result['error']}")
                     st.markdown("---")
@@ -845,7 +840,7 @@ if st.button(f"Predict Credit Rating(s)", key="predict_button"):
                             scaler = scalers[model_name_to_run]
 
                             features_for_model = ALL_COLS # Model B always uses all features
-                            # Ensure only the relevant sentiment columns are passed for Model B
+                            # Ensure only the relevant sentiment columns are passed
                             sentiment_features_for_model = {col: current_sentiment_inputs_dict[col] for col in SENTIMENT_COLS}
                             all_inputs = {**st.session_state.financial_inputs, **sentiment_features_for_model}
                             input_df_for_prediction = pd.DataFrame([all_inputs])
