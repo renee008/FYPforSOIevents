@@ -8,3 +8,10 @@ xgboost
 nltk
 joblib
 matplotlib
+BeautifulSoup
+requests
+re
+csv
+urlparse
+fitz
+io
