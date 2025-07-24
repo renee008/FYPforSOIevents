@@ -327,11 +327,20 @@ def fetch_and_analyze_single_url(url: str) -> tuple[dict, str]:
     avg_neg = sum(neg_scores) / len(neg_scores)
     avg_comp = sum(compound_scores) / len(compound_scores)
 
+    # Determine category for this single URL
+    if avg_comp >= 0.3: # Using user-defined threshold
+        category = "Positive"
+    elif avg_comp <= -0.3: # Using user-defined threshold
+        category = "Negative"
+    else:
+        category = "Neutral"
+
     sentiment_result = {
         'Avg_Positive': avg_pos,
         'Avg_Neutral': avg_neu,
         'Avg_Negative': avg_neg,
-        'Avg_Compound': avg_comp
+        'Avg_Compound': avg_comp,
+        'category': category # Include category in the returned dict
     }
     return sentiment_result, "\n\n".join(relevant_sentences)
 
@@ -357,7 +366,7 @@ def analyze_multiple_urls_sentiment(urls: list[str]) -> tuple[dict, dict]:
                 detailed_results[url] = {"status": "Failed", "error": _} # _ contains error message
 
     if not all_comp_scores: # No URLs were successfully analyzed
-        return ({'Avg_Positive': 0.0, 'Avg_Neutral': 1.0, 'Avg_Negative': 0.0, 'Avg_Compound': 0.0}, detailed_results)
+        return ({'Avg_Positive': 0.0, 'Avg_Neutral': 1.0, 'Avg_Negative': 0.0, 'Avg_Compound': 0.0, 'category': 'Neutral'}, detailed_results) # Default category for no successful URLs
 
     # Calculate overall averages
     overall_avg_pos = sum(all_pos_scores) / len(all_pos_scores)
@@ -705,16 +714,17 @@ if sentiment_input_needed:
                 for url, result in detailed_url_results.items():
                     st.markdown(f"**URL:** [{url}]({url})")
                     if result["status"] == "Success":
-                        st.success(f"  Status: Success (Compound: {result['sentiment']['Avg_Compound']:.2f}, Category: {result['sentiment']['category'] if 'category' in result['sentiment'] else 'N/A'})")
+                        # Now 'category' will be present in result['sentiment']
+                        st.success(f"  Status: Success (Compound: {result['sentiment']['Avg_Compound']:.2f}, Category: {result['sentiment']['category']})")
                     else:
                         st.error(f"  Status: Failed - {result['error']}")
                     st.markdown("---")
         else:
             st.error("Could not perform overall sentiment analysis. Please check the URLs.")
-            overall_sentiment_result = {'Avg_Positive': 0.0, 'Avg_Neutral': 1.0, 'Avg_Negative': 0.0, 'Avg_Compound': 0.0} # Default neutral to avoid errors downstream
+            overall_sentiment_result = {'Avg_Positive': 0.0, 'Avg_Neutral': 1.0, 'Avg_Negative': 0.0, 'Avg_Compound': 0.0, 'category': 'Neutral'} # Default neutral to avoid errors downstream
     else:
         st.info("Enter one or more URLs above to analyze their sentiment.")
-        overall_sentiment_result = {'Avg_Positive': 0.0, 'Avg_Neutral': 1.0, 'Avg_Negative': 0.0, 'Avg_Compound': 0.0} # Default neutral if no URL
+        overall_sentiment_result = {'Avg_Positive': 0.0, 'Avg_Neutral': 1.0, 'Avg_Negative': 0.0, 'Avg_Compound': 0.0, 'category': 'Neutral'} # Default neutral if no URL
 
 
 st.markdown("---")
@@ -879,6 +889,7 @@ st.button("Reset All Inputs", on_click=reset_inputs)
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant.")
+
 
 
 
