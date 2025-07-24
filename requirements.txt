@@ -11,4 +11,4 @@ matplotlib
 BeautifulSoup4
 requests
 PyMuPDF
-ArticleExtractor
+boilerpy3
