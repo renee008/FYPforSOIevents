@@ -8,10 +8,6 @@ xgboost
 nltk
 joblib
 matplotlib
-BeautifulSoup
+BeautifulSoup4
 requests
-re
-csv
-urlparse
-fitz
-io
+PyMuPDF
