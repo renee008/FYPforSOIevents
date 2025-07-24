@@ -17,6 +17,7 @@ import re
 from urllib.parse import urlparse
 import fitz  # PyMuPDF
 import io
+from boilerpy3.extractors import ArticleExtractor # Import boilerpy3
 
 # --- Custom CSS for Styling ---
 st.markdown(
@@ -289,13 +290,11 @@ def fetch_and_analyze_single_url(url: str) -> tuple[dict, str]:
             with fitz.open(stream=pdf_file, filetype="pdf") as doc:
                 text = "\n".join([page.get_text() for page in doc])
         else:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            # Extract text from common content tags
-            paragraphs = soup.find_all(['p', 'div', 'span', 'h1', 'h2', 'h3', 'li'])
-            text = " ".join([p.get_text(separator=' ', strip=True) for p in paragraphs])
-            # Remove excessive whitespace
-            text = re.sub(r'\s+', ' ', text).strip()
-
+            # Use boilerpy3 for robust article extraction from HTML
+            extractor = ArticleExtractor()
+            document = extractor.get_doc(response.text)
+            text = document.content
+            
     except requests.exceptions.RequestException as e:
         return ({}, f"Error fetching URL '{url}': {e}")
     except Exception as e:
@@ -714,7 +713,7 @@ if sentiment_input_needed:
                 for url, result in detailed_url_results.items():
                     st.markdown(f"**URL:** [{url}]({url})")
                     if result["status"] == "Success":
-                        # Removed 'Category: {result['sentiment']['category']}'
+                        # Display only the compound score for individual URLs
                         st.success(f"  Status: Success (Compound: {result['sentiment']['Avg_Compound']:.2f})")
                     else:
                         st.error(f"  Status: Failed - {result['error']}")
@@ -889,6 +888,7 @@ st.button("Reset All Inputs", on_click=reset_inputs)
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant.")
+
 
 
 
