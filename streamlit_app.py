@@ -714,8 +714,8 @@ if sentiment_input_needed:
                 for url, result in detailed_url_results.items():
                     st.markdown(f"**URL:** [{url}]({url})")
                     if result["status"] == "Success":
-                        # Now 'category' will be present in result['sentiment']
-                        st.success(f"  Status: Success (Compound: {result['sentiment']['Avg_Compound']:.2f}, Category: {result['sentiment']['category']})")
+                        # Removed 'Category: {result['sentiment']['category']}'
+                        st.success(f"  Status: Success (Compound: {result['sentiment']['Avg_Compound']:.2f})")
                     else:
                         st.error(f"  Status: Failed - {result['error']}")
                     st.markdown("---")
@@ -889,6 +889,7 @@ st.button("Reset All Inputs", on_click=reset_inputs)
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant.")
+
 
 
 
