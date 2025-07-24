@@ -23,7 +23,7 @@ st.markdown(
     """
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
-    html, body, [class*="css"] {\
+    html, body, [class*="css"] {
         font-family: 'Inter', sans-serif;
     }
     .stButton>button {
@@ -365,9 +365,10 @@ def analyze_multiple_urls_sentiment(urls: list[str]) -> tuple[dict, dict]:
     overall_avg_neg = sum(all_neg_scores) / len(all_neg_scores)
     overall_avg_comp = sum(all_comp_scores) / len(all_comp_scores)
 
-    if overall_avg_comp >= 0.05:
+    # Apply the user-defined thresholds for overall category
+    if overall_avg_comp >= 0.3: # Changed from 0.05 to 0.3
         overall_category = "Positive"
-    elif overall_avg_comp <= -0.05:
+    elif overall_avg_comp <= -0.3: # Changed from -0.05 to -0.3
         overall_category = "Negative"
     else:
         overall_category = "Neutral"
@@ -704,8 +705,7 @@ if sentiment_input_needed:
                 for url, result in detailed_url_results.items():
                     st.markdown(f"**URL:** [{url}]({url})")
                     if result["status"] == "Success":
-                        st.success(f"  Status: Success")
-                        st.write(f"  Sentiment: Compound {result['sentiment']['Avg_Compound']:.2f} (Category: {result['sentiment']['category'] if 'category' in result['sentiment'] else 'N/A'})")
+                        st.success(f"  Status: Success (Compound: {result['sentiment']['Avg_Compound']:.2f}, Category: {result['sentiment']['category'] if 'category' in result['sentiment'] else 'N/A'})")
                     else:
                         st.error(f"  Status: Failed - {result['error']}")
                     st.markdown("---")
