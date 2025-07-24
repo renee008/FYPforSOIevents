@@ -10,6 +10,14 @@ import nltk # Import nltk
 import numpy as np # Import numpy for array handling
 import matplotlib.pyplot as plt # For plotting contributions
 
+# For URL fetching and parsing
+import requests
+from bs4 import BeautifulSoup
+import re
+from urllib.parse import urlparse
+import fitz  # PyMuPDF
+import io
+
 # --- Custom CSS for Styling ---
 st.markdown(
     """
@@ -251,44 +259,128 @@ def _predict_single_model(model, scaler, input_df, feature_columns, label_encode
         st.error(f"Error during single model prediction ({type(model).__name__}): {e}")
         return "Prediction failed.", {}
 
-# --- Sentiment Analysis Function ---
-def analyze_sentiment(news_article: str) -> dict:
-    """
-    Analyzes the sentiment of a news article using VADER and returns the
-    Avg_Positive, Avg_Neutral, Avg_Negative, and Avg_Compound scores.
-    """
-    if not news_article:
-        return {'polarity': 0.0, 'subjectivity': 0.0, 'category': 'Neutral',
-                'Avg_Positive': 0.0, 'Avg_Neutral': 1.0, 'Avg_Negative': 0.0, 'Avg_Compound': 0.0}
+# --- Sentiment Analysis Function (Updated to handle URL) ---
+# Keywords for filtering relevant sentences (consistent with part6.py)
+KEYWORDS = [
+    'revenue', 'earnings', 'profit', 'loss', 'income', 'debt', 'dividend',
+    'forecast', 'growth', 'decline', 'investment', 'shareholder', 'stock',
+    'market', 'guidance', 'cash flow', 'valuation', 'credit', 'expenses',
+    'capital', 'return', 'liability', 'asset', 'equity', 'margin', 'rating',
+    'billion', 'million'
+]
 
+@st.cache_data(show_spinner=False) # Cache the results of web scraping and sentiment analysis
+def fetch_and_analyze_single_url(url: str) -> tuple[dict, str]:
+    """
+    Fetches content from a single URL, extracts relevant text, and performs sentiment analysis.
+    Returns (sentiment_scores_dict, extracted_text_or_error_message).
+    """
+    if not url:
+        return ({}, "No URL provided.")
+
+    text = ""
     try:
-        analyzer = SentimentIntensityAnalyzer()
-        vs = analyzer.polarity_scores(news_article)
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+        response = requests.get(url, headers=headers, timeout=15)
+        response.raise_for_status() # Raise an HTTPError for bad responses (4xx or 5xx)
 
-        compound_score = vs['compound']
-
-        if compound_score >= 0.05:
-            category = "Positive"
-        elif compound_score <= -0.05:
-            category = "Negative"
+        if url.lower().endswith(".pdf"):
+            pdf_file = io.BytesIO(response.content)
+            with fitz.open(stream=pdf_file, filetype="pdf") as doc:
+                text = "\n".join([page.get_text() for page in doc])
         else:
-            category = "Neutral"
+            soup = BeautifulSoup(response.text, 'html.parser')
+            # Extract text from common content tags
+            paragraphs = soup.find_all(['p', 'div', 'span', 'h1', 'h2', 'h3', 'li'])
+            text = " ".join([p.get_text(separator=' ', strip=True) for p in paragraphs])
+            # Remove excessive whitespace
+            text = re.sub(r'\s+', ' ', text).strip()
 
-        avg_positive_flag = vs['pos'] # Use actual pos score
-        avg_neutral_flag = vs['neu'] # Use actual neu score
-        avg_negative_flag = vs['neg'] # Use actual neg score
-
-        return {'polarity': compound_score,
-                'subjectivity': 0.0,
-                'category': category,
-                'Avg_Positive': avg_positive_flag,
-                'Avg_Neutral': avg_neutral_flag,
-                'Avg_Negative': avg_negative_flag,
-                'Avg_Compound': compound_score}
+    except requests.exceptions.RequestException as e:
+        return ({}, f"Error fetching URL '{url}': {e}")
     except Exception as e:
-        st.error(f"Error during sentiment analysis: {e}")
-        return {'polarity': 0.0, 'subjectivity': 0.0, 'category': 'Error',
-                'Avg_Positive': 0.0, 'Avg_Neutral': 0.0, 'Avg_Negative': 0.0, 'Avg_Compound': 0.0}
+        return ({}, f"Error parsing content from URL '{url}': {e}")
+
+    if not text:
+        return ({}, f"No readable content found at URL '{url}' or content was too short.")
+
+    # Apply keyword filtering and sentiment analysis
+    analyzer = SentimentIntensityAnalyzer()
+    
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    relevant_sentences = [s for s in sentences if any(kw in s.lower() for kw in KEYWORDS) and 5 <= len(s.split()) <= 60]
+
+    if not relevant_sentences:
+        return ({}, f"No relevant sentences found in the article from '{url}' for sentiment analysis.")
+
+    pos_scores, neu_scores, neg_scores, compound_scores = [], [], [], []
+    for sentence in relevant_sentences:
+        sentiment = analyzer.polarity_scores(sentence)
+        pos_scores.append(sentiment['pos'])
+        neu_scores.append(sentiment['neu'])
+        neg_scores.append(sentiment['neg'])
+        compound_scores.append(sentiment['compound'])
+
+    # Calculate average scores for this single URL
+    avg_pos = sum(pos_scores) / len(pos_scores)
+    avg_neu = sum(neu_scores) / len(neu_scores)
+    avg_neg = sum(neg_scores) / len(neg_scores)
+    avg_comp = sum(compound_scores) / len(compound_scores)
+
+    sentiment_result = {
+        'Avg_Positive': avg_pos,
+        'Avg_Neutral': avg_neu,
+        'Avg_Negative': avg_neg,
+        'Avg_Compound': avg_comp
+    }
+    return sentiment_result, "\n\n".join(relevant_sentences)
+
+def analyze_multiple_urls_sentiment(urls: list[str]) -> tuple[dict, dict]:
+    """
+    Analyzes sentiment from multiple URLs and returns average scores and detailed results.
+    Returns (overall_sentiment_dict, detailed_results_dict).
+    """
+    all_pos_scores, all_neu_scores, all_neg_scores, all_comp_scores = [], [], [], []
+    detailed_results = {}
+
+    for url in urls:
+        if url.strip(): # Ensure URL is not empty
+            sentiment_for_url, extracted_text = fetch_and_analyze_single_url(url.strip())
+            
+            if sentiment_for_url and 'Avg_Compound' in sentiment_for_url: # Successfully got sentiment scores
+                all_pos_scores.append(sentiment_for_url['Avg_Positive'])
+                all_neu_scores.append(sentiment_for_url['Avg_Neutral'])
+                all_neg_scores.append(sentiment_for_url['Avg_Negative'])
+                all_comp_scores.append(sentiment_for_url['Avg_Compound'])
+                detailed_results[url] = {"status": "Success", "sentiment": sentiment_for_url, "extracted_text": extracted_text}
+            else:
+                detailed_results[url] = {"status": "Failed", "error": extracted_text} # extracted_text contains error message
+
+    if not all_comp_scores: # No URLs were successfully analyzed
+        return ({'Avg_Positive': 0.0, 'Avg_Neutral': 1.0, 'Avg_Negative': 0.0, 'Avg_Compound': 0.0}, detailed_results)
+
+    # Calculate overall averages
+    overall_avg_pos = sum(all_pos_scores) / len(all_pos_scores)
+    overall_avg_neu = sum(all_neu_scores) / len(all_neu_scores)
+    overall_avg_neg = sum(all_neg_scores) / len(all_neg_scores)
+    overall_avg_comp = sum(all_comp_scores) / len(all_comp_scores)
+
+    if overall_avg_comp >= 0.05:
+        overall_category = "Positive"
+    elif overall_avg_comp <= -0.05:
+        overall_category = "Negative"
+    else:
+        overall_category = "Neutral"
+
+    overall_sentiment_result = {
+        'Avg_Positive': overall_avg_pos,
+        'Avg_Neutral': overall_avg_neu,
+        'Avg_Negative': overall_avg_neg,
+        'Avg_Compound': overall_avg_comp,
+        'category': overall_category
+    }
+    return overall_sentiment_result, detailed_results
+
 
 # --- Credit Rating Definitions ---
 CREDIT_RATING_DEFINITIONS = {
@@ -409,15 +501,19 @@ step_values = {
 # --- Initialize Session State for Reset Button and Prediction Triggers ---
 if 'financial_inputs' not in st.session_state:
     st.session_state.financial_inputs = {col: default_values.get(col, 0.0) for col in FINANCIAL_COLS}
-if 'news_article' not in st.session_state:
-    st.session_state.news_article = "Example: The company announced record loss this quarter, exceeding all expectations and leading to a significant stock price decrease. However, concerns about market competition are rising."
+if 'news_article_urls' not in st.session_state: # Changed to store multiple URLs
+    st.session_state.news_article_urls = "https://www.reuters.com/markets/companies/MSFT.O/news/\nhttps://www.cnbc.com/quotes/MSFT/news/" # Example URLs, one per line
 if 'company_name' not in st.session_state:
     st.session_state.company_name = "Example Corp"
+if 'last_extracted_texts' not in st.session_state: # To store extracted texts for display
+    st.session_state.last_extracted_texts = {}
+
 
 def reset_inputs():
     st.session_state.financial_inputs = {col: default_values.get(col, 0.0) for col in FINANCIAL_COLS}
-    st.session_state.news_article = "Example: The company announced record loss this quarter, exceeding all expectations and leading to a significant stock price decrease. However, concerns about market competition are rising."
+    st.session_state.news_article_urls = "https://www.reuters.com/markets/companies/MSFT.O/news/\nhttps://www.cnbc.com/quotes/MSFT/news/" # Reset to example URLs
     st.session_state.company_name = "Example Corp"
+    st.session_state.last_extracted_texts = {}
 
 
 # --- Main UI Layout ---
@@ -453,7 +549,7 @@ with tab_how_to_use:
     1.  **Enter Company Name:** Provide the name of the company you are analyzing.
     2.  **Select a Model:** Choose one of the individual models, or an "All Models" option, from the dropdown.
     3.  **Input Financial Metrics:** Fill in the values for the various financial ratios. Enter percentage-like metrics (e.g., margins, returns) as decimals (e.g., `0.10` for 10%).
-    4.  **Enter News Article (for Model B types):** If you select any "Model B" option (individual or "All Model B"), provide a relevant news article.
+    4.  **Enter News Article URL(s) (for Model B types):** If you select any "Model B" option (individual or "All Model B"), provide one or more relevant news article URLs, one per line. The app will attempt to scrape and analyze the content and average the sentiment.
     5.  **Predict:** Click the "Predict Credit Rating" button to get a prediction and feature contributions.
     6.  **Review Results:** The predicted rating(s), probabilities, and key feature contributions will appear. For "All Models" options, results will be organized into side-by-side columns.
     7.  **Reset Inputs:** Use the "Reset All Inputs" button to clear the form and start fresh.
@@ -576,25 +672,55 @@ financial_df_row = pd.DataFrame([st.session_state.financial_inputs])
 
 st.markdown("---")
 
-# --- Sentiment Input (only if a Model B type or "All Models" is selected) ---
-sentiment_result = None
+# --- Sentiment Input (URL-based, multiple URLs) ---
+overall_sentiment_result = None
 if sentiment_input_needed:
-    st.header("Enter News Article (for Sentiment Analysis)")
-    st.session_state.news_article = st.text_area("Enter Company News Article Here",
-                                value=st.session_state.news_article,
-                                height=200, key="news_article_input")
-    
-    sentiment_result = analyze_sentiment(st.session_state.news_article)
-    
-    st.subheader("News Article Sentiment:")
-    st.info(f"VADER Compound Score: {sentiment_result['Avg_Compound']:.2f} (Positive: {sentiment_result['Avg_Positive']:.2f}, Neutral: {sentiment_result['Avg_Neutral']:.2f}, Negative: {sentiment_result['Avg_Negative']:.2f})")
+    st.header("Enter News Article URL(s) (for Sentiment Analysis)")
+    st.session_state.news_article_urls = st.text_area(
+        "Paste News Article URL(s) Here (one per line)",
+        value=st.session_state.news_article_urls,
+        height=150,
+        key="news_article_urls_input"
+    )
 
-    if sentiment_result['category'] == "Positive":
-        st.success(f"Sentiment Category: **{sentiment_result['category']}** 😊")
-    elif sentiment_result['category'] == "Negative":
-        st.error(f"Sentiment Category: **{sentiment_result['category']}** 😠")
+    urls_list = [url.strip() for url in st.session_state.news_article_urls.split('\n') if url.strip()]
+
+    if urls_list:
+        with st.spinner("Fetching and analyzing articles from URLs... This may take a moment for multiple links."):
+            overall_sentiment_result, detailed_url_results = analyze_multiple_urls_sentiment(urls_list)
+        
+        if overall_sentiment_result and 'category' in overall_sentiment_result:
+            st.subheader("Overall News Article Sentiment (Average):")
+            st.info(f"VADER Compound Score: {overall_sentiment_result['Avg_Compound']:.2f} (Positive: {overall_sentiment_result['Avg_Positive']:.2f}, Neutral: {overall_sentiment_result['Avg_Neutral']:.2f}, Negative: {overall_sentiment_result['Avg_Negative']:.2f})")
+
+            if overall_sentiment_result['category'] == "Positive":
+                st.success(f"Overall Sentiment Category: **{overall_sentiment_result['category']}** 😊")
+            elif overall_sentiment_result['category'] == "Negative":
+                st.error(f"Overall Sentiment Category: **{overall_sentiment_result['category']}** 😠")
+            else:
+                st.info(f"Overall Sentiment Category: **{overall_sentiment_result['category']}** 😐")
+            
+            with st.expander("View Detailed URL Analysis Results"):
+                for url, result in detailed_url_results.items():
+                    st.markdown(f"**URL:** [{url}]({url})")
+                    if result["status"] == "Success":
+                        st.success(f"  Status: Success")
+                        st.write(f"  Sentiment: Compound {result['sentiment']['Avg_Compound']:.2f} (Category: {result['sentiment']['category'] if 'category' in result['sentiment'] else 'N/A'})")
+                        if result['extracted_text']:
+                            st.caption("Extracted Text Snippet:")
+                            st.code(result['extracted_text'][:500] + "..." if len(result['extracted_text']) > 500 else result['extracted_text'])
+                        else:
+                            st.info("  No relevant text extracted from this URL.")
+                    else:
+                        st.error(f"  Status: Failed - {result['error']}")
+                    st.markdown("---")
+        else:
+            st.error("Could not perform overall sentiment analysis. Please check the URLs.")
+            overall_sentiment_result = {'Avg_Positive': 0.0, 'Avg_Neutral': 1.0, 'Avg_Negative': 0.0, 'Avg_Compound': 0.0} # Default neutral to avoid errors downstream
     else:
-        st.info(f"Sentiment Category: **{sentiment_result['category']}** 😐")
+        st.info("Enter one or more URLs above to analyze their sentiment.")
+        overall_sentiment_result = {'Avg_Positive': 0.0, 'Avg_Neutral': 1.0, 'Avg_Negative': 0.0, 'Avg_Compound': 0.0} # Default neutral if no URL
+
 
 st.markdown("---")
 
@@ -603,14 +729,14 @@ if st.button(f"Predict Credit Rating(s)", key="predict_button"):
     
     # Prepare input data based on selected model type
     current_financial_inputs_df = pd.DataFrame([st.session_state.financial_inputs])
-    current_sentiment_inputs_dict = sentiment_result # This will be None if sentiment_input_needed is False
+    current_sentiment_inputs_dict = overall_sentiment_result # Use the overall sentiment result
 
     # Validate inputs before proceeding
     if not all(val is not None for val in st.session_state.financial_inputs.values()):
         st.warning("Please fill in all financial metrics.")
         st.stop()
-    if sentiment_input_needed and not st.session_state.news_article:
-        st.warning("Please paste a news article for sentiment analysis.")
+    if sentiment_input_needed and (not urls_list or not overall_sentiment_result or 'category' not in overall_sentiment_result):
+        st.warning("Please enter valid news article URL(s) and ensure overall sentiment analysis was successful.")
         st.stop()
     if selected_model_name.startswith("---"): # If a separator is selected
         st.warning("Please select a valid model or comparison option from the dropdown.")
@@ -621,7 +747,9 @@ if st.button(f"Predict Credit Rating(s)", key="predict_button"):
     if selected_model_name in models: # Individual model prediction
         input_df_for_prediction = current_financial_inputs_df.copy()
         if sentiment_input_needed:
-            all_inputs = {**st.session_state.financial_inputs, **current_sentiment_inputs_dict}
+            # Ensure only the relevant sentiment columns are passed
+            sentiment_features_for_model = {col: current_sentiment_inputs_dict[col] for col in SENTIMENT_COLS}
+            all_inputs = {**st.session_state.financial_inputs, **sentiment_features_for_model}
             input_df_for_prediction = pd.DataFrame([all_inputs])
         
         input_df_for_prediction = input_df_for_prediction[required_features] # Ensure correct order
@@ -658,103 +786,96 @@ if st.button(f"Predict Credit Rating(s)", key="predict_button"):
         model_A_names = sorted([name for name in models.keys() if "Model A" in name])
         model_B_names = sorted([name for name in models.keys() if "Model B" in name])
 
-        # Determine which group(s) to run based on selection
-        models_to_run_A = []
-        models_to_run_B = []
-
-        if selected_model_name == "All Model A (Financial Only)":
-            models_to_run_A = model_A_names
-        elif selected_model_name == "All Model B (Financial + Sentiment)":
-            models_to_run_B = model_B_names
-        elif selected_model_name == "All Models (A & B)":
-            models_to_run_A = model_A_names
-            models_to_run_B = model_B_names
-        
         cols_per_row = 4
 
         # --- Display All Model A (Financial Only) ---
-        if models_to_run_A:
+        if model_A_names: # Check if there are Model A models to display
             st.subheader("All Model A (Financial Only) Predictions:")
-            for i in range(0, len(models_to_run_A), cols_per_row):
-                cols = st.columns(cols_per_row)
-                for j in range(cols_per_row):
-                    if i + j < len(models_to_run_A):
-                        model_name_to_run = models_to_run_A[i + j]
-                        model = models[model_name_to_run]
-                        scaler = scalers[model_name_to_run]
+            # Use a container to group these columns for better visual separation
+            with st.container():
+                for i in range(0, len(model_A_names), cols_per_row):
+                    cols = st.columns(cols_per_row)
+                    for j in range(cols_per_row):
+                        if i + j < len(model_A_names):
+                            model_name_to_run = model_A_names[i + j]
+                            model = models[model_name_to_run]
+                            scaler = scalers[model_name_to_run]
 
-                        features_for_model = FINANCIAL_COLS # Model A always uses financial features
-                        input_df_for_prediction = current_financial_inputs_df.copy()
-                        input_df_for_prediction = input_df_for_prediction[features_for_model]
+                            features_for_model = FINANCIAL_COLS # Model A always uses financial features
+                            input_df_for_prediction = current_financial_inputs_df.copy()
+                            input_df_for_prediction = input_df_for_prediction[features_for_model]
 
-                        with cols[j]:
-                            st.markdown(f"**{model_name_to_run}**") # Use markdown for smaller title in column
-                            with st.spinner(f"Predicting..."):
-                                predicted_rating, probabilities = _predict_single_model(model, scaler, input_df_for_prediction, features_for_model, label_encoder)
-                                
-                                if predicted_rating != "Prediction failed.":
-                                    st.success(f"Rating: **{predicted_rating}**")
-                                    with st.popover(f"What is '{predicted_rating}'?"):
-                                        st.write(f"**{predicted_rating}:** {CREDIT_RATING_DEFINITIONS.get(predicted_rating, 'Definition not available.')}")
+                            with cols[j]:
+                                st.markdown(f"**{model_name_to_run}**") # Use markdown for smaller title in column
+                                with st.spinner(f"Predicting..."):
+                                    predicted_rating, probabilities = _predict_single_model(model, scaler, input_df_for_prediction, features_for_model, label_encoder)
+                                    
+                                    if predicted_rating != "Prediction failed.":
+                                        st.success(f"Rating: **{predicted_rating}**")
+                                        with st.popover(f"What is '{predicted_rating}'?"):
+                                            st.write(f"**{predicted_rating}:** {CREDIT_RATING_DEFINITIONS.get(predicted_rating, 'Definition not available.')}")
 
-                                    st.markdown("**Probabilities:**")
-                                    prob_df = pd.DataFrame(probabilities.items(), columns=['Rating', 'Probability'])
-                                    prob_df['Probability'] = prob_df['Probability'].astype(float)
-                                    prob_df = prob_df.sort_values(by='Probability', ascending=False)
-                                    prob_df['Probability'] = prob_df['Probability'].apply(lambda x: f"{x:.2%}")
-                                    st.dataframe(prob_df, hide_index=True, use_container_width=True)
+                                        st.markdown("**Probabilities:**")
+                                        prob_df = pd.DataFrame(probabilities.items(), columns=['Rating', 'Probability'])
+                                        prob_df['Probability'] = prob_df['Probability'].astype(float)
+                                        prob_df = prob_df.sort_values(by='Probability', ascending=False)
+                                        prob_df['Probability'] = prob_df['Probability'].apply(lambda x: f"{x:.2%}")
+                                        st.dataframe(prob_df, hide_index=True, use_container_width=True)
 
-                                    st.markdown("**Feature Importance:**")
-                                    plot_feature_contributions(
-                                        model,
-                                        features_for_model,
-                                        model_name_to_run
-                                    )
-                                else:
-                                    st.error(f"Prediction failed.")
+                                        st.markdown("**Feature Importance:**")
+                                        plot_feature_contributions(
+                                            model,
+                                            features_for_model,
+                                            model_name_to_run
+                                        )
+                                    else:
+                                        st.error(f"Prediction failed.")
             st.markdown("---") # Separator after Model A group
 
         # --- Display All Model B (Financial + Sentiment) ---
-        if models_to_run_B:
+        if model_B_names: # Check if there are Model B models to display
             st.subheader("All Model B (Financial + Sentiment) Predictions:")
-            for i in range(0, len(models_to_run_B), cols_per_row):
-                cols = st.columns(cols_per_row)
-                for j in range(cols_per_row):
-                    if i + j < len(models_to_run_B):
-                        model_name_to_run = models_to_run_B[i + j]
-                        model = models[model_name_to_run]
-                        scaler = scalers[model_name_to_run]
+            with st.container(): # Use a container for visual separation
+                for i in range(0, len(model_B_names), cols_per_row):
+                    cols = st.columns(cols_per_row)
+                    for j in range(cols_per_row):
+                        if i + j < len(model_B_names):
+                            model_name_to_run = model_B_names[i + j]
+                            model = models[model_name_to_run]
+                            scaler = scalers[model_name_to_run]
 
-                        features_for_model = ALL_COLS # Model B always uses all features
-                        all_inputs = {**st.session_state.financial_inputs, **current_sentiment_inputs_dict}
-                        input_df_for_prediction = pd.DataFrame([all_inputs])
-                        input_df_for_prediction = input_df_for_prediction[features_for_model]
+                            features_for_model = ALL_COLS # Model B always uses all features
+                            # Ensure only the relevant sentiment columns are passed for Model B
+                            sentiment_features_for_model = {col: current_sentiment_inputs_dict[col] for col in SENTIMENT_COLS}
+                            all_inputs = {**st.session_state.financial_inputs, **sentiment_features_for_model}
+                            input_df_for_prediction = pd.DataFrame([all_inputs])
+                            input_df_for_prediction = input_df_for_prediction[features_for_model]
 
-                        with cols[j]:
-                            st.markdown(f"**{model_name_to_run}**") # Use markdown for smaller title in column
-                            with st.spinner(f"Predicting..."):
-                                predicted_rating, probabilities = _predict_single_model(model, scaler, input_df_for_prediction, features_for_model, label_encoder)
-                                
-                                if predicted_rating != "Prediction failed.":
-                                    st.success(f"Rating: **{predicted_rating}**")
-                                    with st.popover(f"What is '{predicted_rating}'?"):
-                                        st.write(f"**{predicted_rating}:** {CREDIT_RATING_DEFINITIONS.get(predicted_rating, 'Definition not available.')}")
+                            with cols[j]:
+                                st.markdown(f"**{model_name_to_run}**") # Use markdown for smaller title in column
+                                with st.spinner(f"Predicting..."):
+                                    predicted_rating, probabilities = _predict_single_model(model, scaler, input_df_for_prediction, features_for_model, label_encoder)
+                                    
+                                    if predicted_rating != "Prediction failed.":
+                                        st.success(f"Rating: **{predicted_rating}**")
+                                        with st.popover(f"What is '{predicted_rating}'?"):
+                                            st.write(f"**{predicted_rating}:** {CREDIT_RATING_DEFINITIONS.get(predicted_rating, 'Definition not available.')}")
 
-                                    st.markdown("**Probabilities:**")
-                                    prob_df = pd.DataFrame(probabilities.items(), columns=['Rating', 'Probability'])
-                                    prob_df['Probability'] = prob_df['Probability'].astype(float)
-                                    prob_df = prob_df.sort_values(by='Probability', ascending=False)
-                                    prob_df['Probability'] = prob_df['Probability'].apply(lambda x: f"{x:.2%}")
-                                    st.dataframe(prob_df, hide_index=True, use_container_width=True)
+                                        st.markdown("**Probabilities:**")
+                                        prob_df = pd.DataFrame(probabilities.items(), columns=['Rating', 'Probability'])
+                                        prob_df['Probability'] = prob_df['Probability'].astype(float)
+                                        prob_df = prob_df.sort_values(by='Probability', ascending=False)
+                                        prob_df['Probability'] = prob_df['Probability'].apply(lambda x: f"{x:.2%}")
+                                        st.dataframe(prob_df, hide_index=True, use_container_width=True)
 
-                                    st.markdown("**Feature Importance:**")
-                                    plot_feature_contributions(
-                                        model,
-                                        features_for_model,
-                                        model_name_to_run
-                                    )
-                                else:
-                                    st.error(f"Prediction failed.")
+                                        st.markdown("**Feature Importance:**")
+                                        plot_feature_contributions(
+                                            model,
+                                            features_for_model,
+                                            model_name_to_run
+                                        )
+                                    else:
+                                        st.error(f"Prediction failed.")
 
 
 # --- Reset Button (placed at the bottom for accessibility) ---
@@ -763,6 +884,7 @@ st.button("Reset All Inputs", on_click=reset_inputs)
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant.")
+
 
 
 
