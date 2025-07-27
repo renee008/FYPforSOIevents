@@ -109,7 +109,7 @@ def download_nltk_vader():
 download_nltk_vader()
 
 # --- Configuration ---
-st.set_page_config(page_title="Credit Rating & Sentiment Predictor", page_icon="📈", layout="wide") # Changed to wide layout
+st.set_page_config(page_title="Credit Rating & Sentiment Predictor", page_icon="�", layout="wide") # Changed to wide layout
 
 # --- Define Feature Columns (Consistent with your MLtraining.py) ---
 # This list has 20 financial features
@@ -683,6 +683,7 @@ st.markdown("---")
 
 # --- Sentiment Input (URL-based, multiple URLs) ---
 overall_sentiment_result = None
+urls_list = [] # Initialize urls_list here to ensure it's always defined
 if sentiment_input_needed:
     st.header("Enter News Article URL(s) (for Sentiment Analysis)")
     st.session_state.news_article_urls = st.text_area(
@@ -720,10 +721,12 @@ if sentiment_input_needed:
                     st.markdown("---")
         else:
             st.error("Could not perform overall sentiment analysis. Please check the URLs.")
-            overall_sentiment_result = {'Avg_Positive': 0.0, 'Avg_Neutral': 1.0, 'Avg_Negative': 0.0, 'Avg_Compound': 0.0, 'category': 'Neutral'} # Default neutral to avoid errors downstream
+            # Ensure overall_sentiment_result is always a dictionary, even on error
+            overall_sentiment_result = {'Avg_Positive': 0.0, 'Avg_Neutral': 1.0, 'Avg_Negative': 0.0, 'Avg_Compound': 0.0, 'category': 'Neutral'} 
     else:
         st.info("Enter one or more URLs above to analyze their sentiment.")
-        overall_sentiment_result = {'Avg_Positive': 0.0, 'Avg_Neutral': 1.0, 'Avg_Negative': 0.0, 'Avg_Compound': 0.0, 'category': 'Neutral'} # Default neutral if no URL
+        # Ensure overall_sentiment_result is always a dictionary if no URLs provided
+        overall_sentiment_result = {'Avg_Positive': 0.0, 'Avg_Neutral': 1.0, 'Avg_Negative': 0.0, 'Avg_Compound': 0.0, 'category': 'Neutral'}
 
 
 st.markdown("---")
@@ -733,15 +736,17 @@ if st.button(f"Predict Credit Rating(s)", key="predict_button"):
     
     # Prepare input data based on selected model type
     current_financial_inputs_df = pd.DataFrame([st.session_state.financial_inputs])
-    current_sentiment_inputs_dict = overall_sentiment_result # Use the overall sentiment result
-
+    
     # Validate inputs before proceeding
     if not all(val is not None for val in st.session_state.financial_inputs.values()):
         st.warning("Please fill in all financial metrics.")
         st.stop()
-    if sentiment_input_needed and (not urls_list or not overall_sentiment_result or 'category' not in overall_sentiment_result):
-        st.warning("Please enter valid news article URL(s) and ensure overall sentiment analysis was successful.")
+    
+    # Specific validation for Model B types that require sentiment input
+    if (selected_model_name == "All Model B (Financial + Sentiment)" or "Model B (Financial + Sentiment)" in selected_model_name) and (not urls_list or not overall_sentiment_result or 'category' not in overall_sentiment_result):
+        st.warning("Please enter valid news article URL(s) and ensure overall sentiment analysis was successful for Model B predictions.")
         st.stop()
+    
     if selected_model_name.startswith("---"): # If a separator is selected
         st.warning("Please select a valid model or comparison option from the dropdown.")
         st.stop()
@@ -750,16 +755,25 @@ if st.button(f"Predict Credit Rating(s)", key="predict_button"):
 
     if selected_model_name in models: # Individual model prediction
         input_df_for_prediction = current_financial_inputs_df.copy()
-        if sentiment_input_needed:
-            # Ensure only the relevant sentiment columns are passed
-            sentiment_features_for_model = {col: current_sentiment_inputs_dict[col] for col in SENTIMENT_COLS}
+        
+        # Determine features based on individual model type
+        if "Financial Only" in selected_model_name:
+            # For Model A, sentiment features should be zeroed out
+            sentiment_features_for_model = {col: 0.0 for col in SENTIMENT_COLS}
             all_inputs = {**st.session_state.financial_inputs, **sentiment_features_for_model}
             input_df_for_prediction = pd.DataFrame([all_inputs])
+            required_features_for_model_call = FINANCIAL_COLS # Use only financial for Model A
+        else: # Implies "Financial + Sentiment" (Model B)
+            # Use the actual sentiment result
+            sentiment_features_for_model = {col: overall_sentiment_result.get(col, 0.0) for col in SENTIMENT_COLS}
+            all_inputs = {**st.session_state.financial_inputs, **sentiment_features_for_model}
+            input_df_for_prediction = pd.DataFrame([all_inputs])
+            required_features_for_model_call = ALL_COLS # Use all features for Model B
         
-        input_df_for_prediction = input_df_for_prediction[required_features] # Ensure correct order
+        input_df_for_prediction = input_df_for_prediction[required_features_for_model_call] # Ensure correct order
 
         with st.spinner(f"Predicting with {selected_model_name}..."):
-            predicted_rating, probabilities = _predict_single_model(selected_model, selected_scaler, input_df_for_prediction, required_features, label_encoder)
+            predicted_rating, probabilities = _predict_single_model(selected_model, selected_scaler, input_df_for_prediction, required_features_for_model_call, label_encoder)
             
             st.success(f"The predicted credit rating for {st.session_state.company_name} using **{selected_model_name}** is: **{predicted_rating}**")
 
@@ -779,11 +793,11 @@ if st.button(f"Predict Credit Rating(s)", key="predict_button"):
             
             plot_feature_contributions(
                 selected_model,
-                required_features,
+                required_features_for_model_call, # Use the features actually used by the model
                 selected_model_name
             )
 
-    else: # "All Models" options
+    else: # "All Models" options (All Model A, All Model B, All Models (A & B))
         st.info("Running multiple models. Results will be displayed below.")
         
         # Filter models into A and B groups
@@ -793,7 +807,8 @@ if st.button(f"Predict Credit Rating(s)", key="predict_button"):
         cols_per_row = 4
 
         # --- Display All Model A (Financial Only) ---
-        if model_A_names: # Check if there are Model A models to display
+        # This block should only run if "All Model A" or "All Models (A & B)" is selected
+        if model_A_names and (selected_model_name == "All Model A (Financial Only)" or selected_model_name == "All Models (A & B)"):
             st.subheader("All Model A (Financial Only) Predictions:")
             # Use a container to group these columns for better visual separation
             with st.container():
@@ -805,15 +820,19 @@ if st.button(f"Predict Credit Rating(s)", key="predict_button"):
                             model = models[model_name_to_run]
                             scaler = scalers[model_name_to_run]
 
-                            features_for_model = FINANCIAL_COLS # Model A always uses financial features
-                            input_df_for_prediction = current_financial_inputs_df.copy()
-                            input_df_for_prediction = input_df_for_prediction[features_for_model]
+                            # For Model A, explicitly set sentiment features to zero
+                            zero_sentiment_features = {col: 0.0 for col in SENTIMENT_COLS}
+                            all_inputs_for_model_A = {**st.session_state.financial_inputs, **zero_sentiment_features}
+                            input_df_for_prediction = pd.DataFrame([all_inputs_for_model_A])
+                            
+                            features_for_model_call = FINANCIAL_COLS # Model A always uses financial features
+                            input_df_for_prediction = input_df_for_prediction[features_for_model_call] # Ensure correct order
 
                             with cols[j]:
                                 st.markdown(f"**{model_name_to_run}**") # Use markdown for smaller title in column
                                 with st.spinner(f"Predicting..."):
-                                    predicted_rating, probabilities = _predict_single_model(model, scaler, input_df_for_prediction, features_for_model, label_encoder)
-                                    
+                                    predicted_rating, probabilities = _predict_single_model(model, scaler, input_df_for_prediction, features_for_model_call, label_encoder)
+
                                     if predicted_rating != "Prediction failed.":
                                         st.success(f"Rating: **{predicted_rating}**")
                                         with st.popover(f"What is '{predicted_rating}'?"):
@@ -829,7 +848,7 @@ if st.button(f"Predict Credit Rating(s)", key="predict_button"):
                                         st.markdown("**Feature Importance:**")
                                         plot_feature_contributions(
                                             model,
-                                            features_for_model,
+                                            features_for_model_call, # Pass the correct features
                                             model_name_to_run
                                         )
                                     else:
@@ -837,7 +856,8 @@ if st.button(f"Predict Credit Rating(s)", key="predict_button"):
             st.markdown("---") # Separator after Model A group
 
         # --- Display All Model B (Financial + Sentiment) ---
-        if model_B_names: # Check if there are Model B models to display
+        # This block should only run if "All Model B" or "All Models (A & B)" is selected
+        if model_B_names and (selected_model_name == "All Model B (Financial + Sentiment)" or selected_model_name == "All Models (A & B)"):
             st.subheader("All Model B (Financial + Sentiment) Predictions:")
             with st.container(): # Use a container for visual separation
                 for i in range(0, len(model_B_names), cols_per_row):
@@ -848,18 +868,20 @@ if st.button(f"Predict Credit Rating(s)", key="predict_button"):
                             model = models[model_name_to_run]
                             scaler = scalers[model_name_to_run]
 
-                            features_for_model = ALL_COLS # Model B always uses all features
-                            # Ensure only the relevant sentiment columns are passed
-                            sentiment_features_for_model = {col: current_sentiment_inputs_dict[col] for col in SENTIMENT_COLS}
+                            # Ensure overall_sentiment_result is a dictionary (it should be due to initialization)
+                            # Use .get() for safe access in case a key is missing in the dict
+                            sentiment_features_for_model = {col: overall_sentiment_result.get(col, 0.0) for col in SENTIMENT_COLS}
                             all_inputs = {**st.session_state.financial_inputs, **sentiment_features_for_model}
                             input_df_for_prediction = pd.DataFrame([all_inputs])
-                            input_df_for_prediction = input_df_for_prediction[features_for_model]
+                            
+                            features_for_model_call = ALL_COLS # Model B always uses all features
+                            input_df_for_prediction = input_df_for_prediction[features_for_model_call]
 
                             with cols[j]:
                                 st.markdown(f"**{model_name_to_run}**") # Use markdown for smaller title in column
                                 with st.spinner(f"Predicting..."):
-                                    predicted_rating, probabilities = _predict_single_model(model, scaler, input_df_for_prediction, features_for_model, label_encoder)
-                                    
+                                    predicted_rating, probabilities = _predict_single_model(model, scaler, input_df_for_prediction, features_for_model_call, label_encoder)
+
                                     if predicted_rating != "Prediction failed.":
                                         st.success(f"Rating: **{predicted_rating}**")
                                         with st.popover(f"What is '{predicted_rating}'?"):
@@ -875,7 +897,7 @@ if st.button(f"Predict Credit Rating(s)", key="predict_button"):
                                         st.markdown("**Feature Importance:**")
                                         plot_feature_contributions(
                                             model,
-                                            features_for_model,
+                                            features_for_model_call, # Pass the correct features
                                             model_name_to_run
                                         )
                                     else:
