@@ -480,20 +480,20 @@ min_values = {
     'currentRatio': 0.0, 'quickRatio': 0.0, 'cashRatio': 0.0, 'daysOfSalesOutstanding': 0.0,
     'netProfitMargin': -5.0, 'pretaxProfitMargin': -5.0, 'grossProfitMargin': -5.0,
     'returnOnAssets': -5.0, 'returnOnEquity': -5.0, 'assetTurnover': 0.0,
-    'fixedAssetTurnover': 0.0, 'debtRatio': 0.0, 'effectiveTaxRate': 0.0,
+    'fixedAssetTurnover': 0.0, 'debtRatio': 0.0, 'effectiveTaxRate': -0.1,
     'freeCashFlowOperatingCashFlowRatio': -10.0, 'freeCashFlowPerShare': -100.0, 'cashPerShare': 0.0,
     'enterpriseValueMultiple': 0.0,
     'operatingCashFlowPerShare': -100.0, 'operatingCashFlowSalesRatio': -5.0, 'payablesTurnover': 0.0
 }
 
 max_values = {
-    'currentRatio': 10.0, 'quickRatio': 5.0, 'cashRatio': 1.0, 'daysOfSalesOutstanding': 365.0,
-    'netProfitMargin': 1.0, 'pretaxProfitMargin': 1.0, 'grossProfitMargin': 1.0,
-    'returnOnAssets': 1.0, 'returnOnEquity': 1.0, 'assetTurnover': 5.0,
-    'fixedAssetTurnover': 20.0, 'debtRatio': 1.0, 'effectiveTaxRate': 1.0,
-    'freeCashFlowOperatingCashFlowRatio': 5.0, 'freeCashFlowPerShare': 100.0, 'cashPerShare': 50.0,
+    'currentRatio': 10.0, 'quickRatio': 50.0, 'cashRatio': 10.0, 'daysOfSalesOutstanding': 365.0,
+    'netProfitMargin': 10.0, 'pretaxProfitMargin': 10.0, 'grossProfitMargin': 10.0,
+    'returnOnAssets': 10.0, 'returnOnEquity': 10.0, 'assetTurnover': 50.0,
+    'fixedAssetTurnover': 20.0, 'debtRatio': 10.0, 'effectiveTaxRate': 10.0,
+    'freeCashFlowOperatingCashFlowRatio': 50.0, 'freeCashFlowPerShare': 100.0, 'cashPerShare': 50.0,
     'enterpriseValueMultiple': 50.0,
-    'operatingCashFlowPerShare': 100.0, 'operatingCashFlowSalesRatio': 1.0, 'payablesTurnover': 20.0
+    'operatingCashFlowPerShare': 100.0, 'operatingCashFlowSalesRatio': 10.0, 'payablesTurnover': 20.0
 }
 
 step_values = {
