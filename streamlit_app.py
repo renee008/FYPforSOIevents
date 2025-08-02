@@ -669,12 +669,13 @@ for category, cols_in_category in FINANCIAL_CATEGORIES.items():
 
                 st.session_state.financial_inputs[col_name] = st.number_input(
                     f"Value for {col_name}",
-                    min_value=min_values.get(col_name, 0.0),
-                    max_value=max_values.get(col_name, 1000.0),
-                    value=st.session_state.financial_inputs.get(col_name, default_values.get(col_name, 0.0)),
-                    step=step_values.get(col_name, 0.01),
-                    key=f"fin_input_{col_name}" # Unique key for each input
+                    min_value=float(min_values.get(col_name, 0.0)),
+                    max_value=float(max_values.get(col_name, 1000.0)),
+                    value=float(st.session_state.financial_inputs.get(col_name, default_values.get(col_name, 0.0))),
+                    step=float(step_values.get(col_name, 0.01)),
+                    key=f"fin_input_{col_name}"
                 )
+
 
 # Convert financial inputs to a DataFrame row
 financial_df_row = pd.DataFrame([st.session_state.financial_inputs])
@@ -910,6 +911,7 @@ st.button("Reset All Inputs", on_click=reset_inputs)
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant.")
+
 
 
 
