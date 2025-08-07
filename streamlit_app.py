@@ -19,172 +19,429 @@ import fitz  # PyMuPDF
 import io
 from boilerpy3.extractors import ArticleExtractor # Import boilerpy3
 
-# Define colors and fonts
-PRIMARY_COLOR = "#0B3954"  # Navy Blue
-SECONDARY_COLOR = "#BFD7EA"  # Light Blue/Grey background
-ACCENT_COLOR = "#FF9F1C"  # Gold/Orange
-TEXT_COLOR = "#333333"  # Dark Gray
+# -- CSS Styling for a professional financial UI --
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;700&display=swap');
 
-# Inject CSS for fonts, colors, and layout
-st.markdown(f"""
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;700&display=swap');
+body, .css-18e3th9 {
+    font-family: 'Roboto Slab', serif;
+    background-color: #f9fafc;
+    color: #1b1b1b;
+}
 
-    html, body, [class*="css"] {{
-        font-family: 'Roboto Slab', serif;
-        color: {TEXT_COLOR};
-        background-color: #f7f9fc;
-    }}
-    .title {{
-        font-size: 38px;
-        font-weight: 700;
-        color: {PRIMARY_COLOR};
-        text-transform: uppercase;
-        margin-bottom: 15px;
-        text-align: center;
-    }}
-    .section-header {{
-        font-size: 24px;
-        font-weight: 600;
-        margin-top: 30px;
-        margin-bottom: 15px;
-        color: {PRIMARY_COLOR};
-        border-bottom: 3px solid {ACCENT_COLOR};
-        padding-bottom: 5px;
-    }}
-    .caption-text {{
-        font-size: 12px;
-        color: #666666;
-        font-style: italic;
-        margin-top: -10px;
-        margin-bottom: 10px;
-    }}
-    .card {{
-        background: #ffffff;
-        padding: 20px 30px;
-        margin-bottom: 30px;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-        border-radius: 12px;
-    }}
-    div.stButton > button:first-child {{
-        background-color: {ACCENT_COLOR};
-        color: white;
-        font-weight: 600;
-        border-radius: 10px;
-        height: 45px;
-        width: 100%;
-        font-size: 18px;
-        transition: background-color 0.3s ease;
-    }}
-    div.stButton > button:first-child:hover {{
-        background-color: #cc7a00;
-        color: white;
-    }}
-    .stTextInput > label, .stNumberInput > label {{
-        font-weight: 600;
-        color: {PRIMARY_COLOR};
-    }}
-    /* Adjust expander header font */
-    .streamlit-expanderHeader {{
-        font-weight: 600 !important;
-        color: {PRIMARY_COLOR} !important;
-        font-size: 18px !important;
-    }}
-    </style>
+.title {
+    font-size: 38px;
+    font-weight: 700;
+    color: #003366;
+    text-transform: uppercase;
+    text-align: center;
+    margin-bottom: 40px;
+}
+
+.section-header {
+    font-size: 26px;
+    font-weight: 700;
+    color: #003366;
+    border-bottom: 3px solid #ff9900;
+    padding-bottom: 6px;
+    margin-top: 40px;
+    margin-bottom: 20px;
+}
+
+.card {
+    background: white;
+    padding: 30px 40px;
+    border-radius: 15px;
+    box-shadow: 0 6px 15px rgb(0 0 0 / 0.1);
+    margin-bottom: 40px;
+}
+
+.streamlit-expanderHeader {
+    font-weight: 700 !important;
+    font-size: 18px !important;
+    color: #003366 !important;
+}
+
+.stButton>button {
+    background-color: #ff9900;
+    color: white;
+    font-weight: 700;
+    border-radius: 10px;
+    padding: 12px 0;
+    font-size: 20px;
+    width: 100%;
+    transition: background-color 0.25s ease;
+}
+
+.stButton>button:hover {
+    background-color: #cc7a00;
+    color: white;
+}
+
+.stNumberInput > label, .stTextArea > label {
+    font-weight: 700;
+    color: #003366;
+}
+
+.stInfo {
+    background-color: #eaf4ff;
+    border-left: 6px solid #0091ff !important;
+    color: #003366 !important;
+    font-size: 14px;
+    font-weight: 500;
+    padding: 12px 15px !important;
+    border-radius: 6px;
+}
+
+.stSuccess, .stSuccess p {
+    font-weight: 700 !important;
+    font-size: 18px !important;
+    color: #0b610b !important;
+}
+
+.stWarning, .stWarning p {
+    font-weight: 700 !important;
+    font-size: 18px !important;
+    color: #a85f00 !important;
+}
+
+.stError, .stError p {
+    font-weight: 700 !important;
+    font-size: 18px !important;
+    color: #a10000 !important;
+}
+
+.stDataFrame {
+    border-radius: 12px !important;
+    box-shadow: 0 3px 8px rgb(0 0 0 / 0.05);
+}
+
+.caption-text {
+    font-size: 12px;
+    font-style: italic;
+    color: #666666;
+    margin-top: -8px;
+    margin-bottom: 12px;
+}
+
+</style>
 """, unsafe_allow_html=True)
 
-# Title
-st.markdown('<div class="title">Company Financial Health & News Sentiment Analyzer</div>', unsafe_allow_html=True)
+# --- NLTK Data Download (Crucial for VADER) ---
+@st.cache_resource # Cache the download to run only once
+def download_nltk_vader():
+    try:
+        nltk.data.find('sentiment/vader_lexicon.zip')
+    except LookupError: # Catch LookupError for missing data
+        nltk.download('vader_lexicon')
 
-# --- Input Section: Financial Metrics ---
-with st.container():
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="section-header">💰 Enter Financial Metrics</div>', unsafe_allow_html=True)
-    st.markdown("*(All values should be numerical. Enter percentages as decimals, e.g., 0.1 for 10%)*")
+download_nltk_vader()
 
-    # Increase columns per row for better use of space
-    num_cols_per_row_in_expander = 3
+# --- Configuration ---
+st.set_page_config(page_title="Credit Rating & Sentiment Predictor", page_icon="�", layout="wide") # Changed to wide layout
 
-    for category, cols_in_category in FINANCIAL_CATEGORIES.items():
-        with st.expander(f"**{category}**", expanded=False):
-            expander_cols = st.columns(num_cols_per_row_in_expander)
+# --- Define Feature Columns (Consistent with your MLtraining.py) ---
+# This list has 20 financial features
+FINANCIAL_COLS = [
+    'currentRatio', 'quickRatio', 'cashRatio', 'daysOfSalesOutstanding',
+    'netProfitMargin', 'pretaxProfitMargin', 'grossProfitMargin',
+    'returnOnAssets', 'returnOnEquity', 'assetTurnover',
+    'fixedAssetTurnover', 'debtRatio', 'effectiveTaxRate',
+    'freeCashFlowOperatingCashFlowRatio', 'freeCashFlowPerShare', 'cashPerShare',
+    'enterpriseValueMultiple', 'payablesTurnover','operatingCashFlowPerShare', 'operatingCashFlowSalesRatio'
+]
+
+# Define categories for financial inputs for better UI
+FINANCIAL_CATEGORIES = {
+    "Liquidity Ratios": ['currentRatio', 'quickRatio', 'cashRatio'],
+    "Profitability & Margins": ['netProfitMargin', 'pretaxProfitMargin', 'grossProfitMargin', 'operatingCashFlowSalesRatio'],
+    "Asset Efficiency": ['daysOfSalesOutstanding', 'assetTurnover', 'fixedAssetTurnover', 'payablesTurnover'],
+    "Leverage & Debt": ['debtRatio'],
+    "Return Ratios": ['returnOnAssets', 'returnOnEquity'],
+    "Cash Flow Metrics": ['freeCashFlowOperatingCashFlowRatio', 'freeCashFlowPerShare', 'cashPerShare', 'operatingCashFlowPerShare'],
+    "Other Key Metrics": ['enterpriseValueMultiple', 'effectiveTaxRate']
+}
+
+
+SENTIMENT_COLS = ['Avg_Positive', 'Avg_Neutral', 'Avg_Negative', 'Avg_Compound']
+ALL_COLS = FINANCIAL_COLS + SENTIMENT_COLS
+
+# --- Define a consistent order for credit ratings ---
+RATING_ORDER = ['AAA', 'AA', 'A', 'BBB', 'BB', 'B', 'CCC', 'CC', 'C', 'D']
+
+# --- Model and Scaler Loading ---
+@st.cache_resource # Cache the models and scalers to avoid reloading on every rerun
+def load_models_and_scalers():
+    models = {}
+    scalers = {}
+    label_encoder = None # Initialize label_encoder here
+
+    try:
+        # Load CatBoost Model A (Financial Only) and its scaler (renee_scaler_financial.pkl)
+        cat_model_A = CatBoostClassifier()
+        cat_model_A.load_model('CatboostML.modelA.cbm')
+        models['CatBoost Model A (Financial Only)'] = cat_model_A
+        scalers['CatBoost Model A (Financial Only)'] = joblib.load('renee_scaler_financial.pkl')
+
+        # Load CatBoost Model B (Financial + Sentiment) and its scaler (renee_scaler_all.pkl)
+        cat_model_B = CatBoostClassifier()
+        cat_model_B.load_model('CatboostML.modelB.cbm')
+        models['CatBoost Model B (Financial + Sentiment)'] = cat_model_B
+        scalers['CatBoost Model B (Financial + Sentiment)'] = joblib.load('renee_scaler_all.pkl')
+
+        # Load RandomForest Model A (Financial Only) and its scaler (ath_scaler_financial.pkl)
+        rf_model_A = joblib.load('ath_modelA_randomforest.pkl')
+        models['RandomForest Model A (Financial Only)'] = rf_model_A
+        scalers['RandomForest Model A (Financial Only)'] = joblib.load('ath_scaler_financial.pkl')
+
+        # Load RandomForest Model B (Financial + Sentiment) and its scaler (ath_scaler_all.pkl)
+        rf_model_B = joblib.load('ath_modelB_randomforest.pkl')
+        models['RandomForest Model B (Financial + Sentiment)'] = rf_model_B
+        scalers['RandomForest Model B (Financial + Sentiment)'] = joblib.load('ath_scaler_all.pkl')
+
+        # Load LightGBM Model A (Financial Only) and its scaler (ralph_scaler_financial.pkl)
+        lgbm_model_A = lgb.Booster(model_file='LightGBM.modelA.txt')
+        models['LightGBM Model A (Financial Only)'] = lgbm_model_A
+        scalers['LightGBM Model A (Financial Only)'] = joblib.load('ralph_scaler_financial.pkl')
+
+        # Load LightGBM Model B (Financial + Sentiment) and its scaler (ralph_scaler_all.pkl)
+        lgbm_model_B = lgb.Booster(model_file='LightGBM.modelB.txt')
+        models['LightGBM Model B (Financial + Sentiment)'] = lgbm_model_B
+        scalers['LightGBM Model B (Financial + Sentiment)'] = joblib.load('ralph_scaler_all.pkl')
+
+        # Load XGBoost Model A (Financial Only) and its scaler (yu_pin_scaler_financial.pkl)
+        xgb_model_A = joblib.load('xgb_model_A_financial.pkl')
+        models['XGBoost Model A (Financial Only)'] = xgb_model_A
+        scalers['XGBoost Model A (Financial Only)'] = joblib.load('yu_pin_scaler_financial.pkl')
+
+        # Load XGBoost Model B (Financial + Sentiment) and its scaler (yu_pin_scaler_all.pkl)
+        xgb_model_B = joblib.load('xgb_model_B_financial_sentiment.pkl')
+        models['XGBoost Model B (Financial + Sentiment)'] = xgb_model_B
+        scalers['XGBoost Model B (Financial + Sentiment)'] = joblib.load('yu_pin_scaler_all.pkl')
+
+        # Load the LabelEncoder for credit ratings (used by XGBoost, RandomForest, LightGBM)
+        label_encoder = joblib.load('rating_label_encoder.pkl')
+
+
+        st.success("All individual models and scalers loaded successfully!")
+    except FileNotFoundError as e:
+        st.error(f"Error loading model or scaler file: {e}. Please ensure all model and scaler files are in the same directory.")
+        st.stop() # Stop the app if essential files are missing
+    except Exception as e:
+        st.error(f"An unexpected error occurred while loading models: {e}")
+        st.stop()
+    return models, scalers, label_encoder
+
+# Load models and scalers at the start of the app
+models, scalers, label_encoder = load_models_and_scalers()
+
+# --- Prediction Function for a Single Model ---
+def _predict_single_model(model, scaler, input_df, feature_columns, label_encoder) -> tuple:
+    """
+    Predicts the credit rating and its probabilities using a single given model and scaler.
+    Returns (predicted_rating_str, probabilities_dict).
+    """
+    try:
+        input_df_reindexed = input_df[feature_columns]
+        
+        # Debugging: Check for NaNs in input_df_reindexed
+        if input_df_reindexed.isnull().any().any():
+            st.error(f"NaN values detected in input features for model {type(model).__name__}. Please check your inputs.")
+            return "Prediction failed (NaN in input).", {}
+
+        scaled_data = scaler.transform(input_df_reindexed)
+
+        # Handle prediction based on model type
+        if isinstance(model, CatBoostClassifier):
+            # CatBoost predict can return a 1-element array, ensure it's a scalar string
+            predicted_rating_raw = model.predict(scaled_data)[0]
+            if isinstance(predicted_rating_raw, np.ndarray): # If it's still a numpy array (e.g., array(['A']))
+                predicted_rating_str = predicted_rating_raw.item() # Extract the scalar string
+            else: # It's already a string
+                predicted_rating_str = str(predicted_rating_raw)
             
-            for i, col_name in enumerate(cols_in_category):
-                with expander_cols[i % num_cols_per_row_in_expander]:
-                    st.write(f"**{col_name}**")
-                    if 'Margin' in col_name or 'ReturnOn' in col_name or 'TaxRate' in col_name or 'Ratio' in col_name:
-                        st.caption("Enter as decimal (e.g., 0.1 for 10%)")
-                    
-                    metric_help_text = {
-                        'currentRatio': 'Measures short-term liquidity: current assets / current liabilities.',
-                        'quickRatio': 'Measures short-term liquidity excluding inventory: (current assets - inventory) / current liabilities.',
-                        'cashRatio': 'Most conservative liquidity measure: cash / current liabilities.',
-                        'daysOfSalesOutstanding': 'Average number of days to collect accounts receivable.',
-                        'netProfitMargin': 'Percentage of revenue left after all expenses, including taxes.',
-                        'pretaxProfitMargin': 'Percentage of revenue left before taxes.',
-                        'grossProfitMargin': 'Percentage of revenue left after deducting cost of goods sold.',
-                        'returnOnAssets': 'How efficiently a company uses its assets to generate earnings.',
-                        'returnOnEquity': 'How much profit a company generates for each dollar of shareholders\' equity.',
-                        'assetTurnover': 'How efficiently a company uses its assets to generate sales.',
-                        'fixedAssetTurnover': 'How efficiently a company uses its fixed assets to generate sales.',
-                        'debtRatio': 'Total debt / total assets. Measures leverage.',
-                        'effectiveTaxRate': 'The actual rate of tax paid by a company on its earnings.',
-                        'freeCashFlowOperatingCashFlowRatio': 'Free cash flow / operating cash flow. Measures cash available after capital expenditures.',
-                        'freeCashFlowPerShare': 'Free cash flow available per share.',
-                        'cashPerShare': 'Cash and cash equivalents per outstanding share.',
-                        'enterpriseValueMultiple': 'Enterprise Value / EBITDA. Valuation multiple.',
-                        'operatingCashFlowPerShare': 'Cash generated from operations per share.',
-                        'operatingCashFlowSalesRatio': 'Operating cash flow / sales. Measures cash generated from each dollar of sales.',
-                        'payablesTurnover': 'How many times a company pays off its accounts payable during a period.'
-                    }
-                    st.info(metric_help_text.get(col_name, "No specific help text available."), icon="ℹ️")
+            probabilities = model.predict_proba(scaled_data)[0]
+            class_names = model.classes_ # CatBoost stores class names
+        elif isinstance(model, RandomForestClassifier) or isinstance(model, xgb.XGBClassifier):
+            raw_prediction = model.predict(scaled_data)[0]
+            # If raw_prediction is a string (e.g., 'A'), convert it to int index using label_encoder
+            if isinstance(raw_prediction, str):
+                predicted_class_idx = label_encoder.transform([raw_prediction])[0]
+            else: # Otherwise, it's already a numerical index
+                predicted_class_idx = raw_prediction
+            
+            predicted_rating_str = label_encoder.inverse_transform([int(predicted_class_idx)])[0] # Convert to string
+            probabilities = model.predict_proba(scaled_data)[0]
+            class_names = label_encoder.classes_ # Use label encoder classes for consistency
+        elif isinstance(model, lgb.Booster):
+            probabilities = model.predict(scaled_data)[0]
+            predicted_class_idx = np.argmax(probabilities)
+            predicted_rating_str = label_encoder.inverse_transform([predicted_class_idx])[0]
+            class_names = label_encoder.classes_ # Use label encoder classes for consistency
+        else:
+            return "Unsupported model type.", {}
 
-                    st.session_state.financial_inputs[col_name] = st.number_input(
-                        f"Value for {col_name}",
-                        min_value=min_values.get(col_name, 0.0),
-                        max_value=max_values.get(col_name, 1000.0),
-                        value=st.session_state.financial_inputs.get(col_name, default_values.get(col_name, 0.0)),
-                        step=step_values.get(col_name, 0.01),
-                        key=f"fin_input_{col_name}" # Unique key for each input
-                    )
-    st.markdown('</div>', unsafe_allow_html=True)
+        probabilities_dict = dict(zip(class_names, probabilities))
 
-# --- Input Section: News URLs ---
-if sentiment_input_needed:
-    with st.container():
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div class="section-header">📰 News Article URL(s) for Sentiment Analysis</div>', unsafe_allow_html=True)
+        return str(predicted_rating_str), probabilities_dict
 
-        st.session_state.news_article_urls = st.text_area(
-            "Paste News Article URL(s) Here (one per line)",
-            value=st.session_state.news_article_urls,
-            height=150,
-            key="news_article_urls_input"
-        )
+    except Exception as e:
+        st.error(f"Error during single model prediction ({type(model).__name__}): {e}")
+        return "Prediction failed.", {}
 
-        st.markdown('</div>', unsafe_allow_html=True)
+# --- Sentiment Analysis Function (Updated to handle URL) ---
+# Keywords for filtering relevant sentences (consistent with part6.py)
+KEYWORDS = [
+    'revenue', 'earnings', 'profit', 'loss', 'income', 'debt', 'dividend',
+    'forecast', 'growth', 'decline', 'investment', 'shareholder', 'stock',
+    'market', 'guidance', 'cash flow', 'valuation', 'credit', 'expenses',
+    'capital', 'return', 'liability', 'asset', 'equity', 'margin', 'rating',
+    'billion', 'million'
+]
 
-# --- Prediction Button ---
-st.markdown('<div class="card">', unsafe_allow_html=True)
-if st.button(f"Predict Credit Rating(s)", key="predict_button"):
-    # Your existing prediction logic here (no change)
+@st.cache_data(show_spinner=False) # Cache the results of web scraping and sentiment analysis
+def fetch_and_analyze_single_url(url: str) -> tuple[dict, str]:
+    """
+    Fetches content from a single URL, extracts relevant text, and performs sentiment analysis.
+    Returns (sentiment_scores_dict, extracted_text_or_error_message).
+    """
+    if not url:
+        return ({}, "No URL provided.")
 
-    # (You can keep your prediction code as is, wrapped inside this container)
-    pass  # placeholder for your code
-st.markdown('</div>', unsafe_allow_html=True)
+    text = ""
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+        response = requests.get(url, headers=headers, timeout=15)
+        response.raise_for_status() # Raise an HTTPError for bad responses (4xx or 5xx)
 
-# --- Results Section ---
-# Wrap your results display (predicted rating, probabilities, feature importances) inside a card container similarly
+        if url.lower().endswith(".pdf"):
+            pdf_file = io.BytesIO(response.content)
+            with fitz.open(stream=pdf_file, filetype="pdf") as doc:
+                text = "\n".join([page.get_text() for page in doc])
+        else:
+            # Use boilerpy3 for robust article extraction from HTML
+            extractor = ArticleExtractor()
+            document = extractor.get_doc(response.text)
+            text = document.content
+            
+    except requests.exceptions.RequestException as e:
+        return ({}, f"Error fetching URL '{url}': {e}")
+    except Exception as e:
+        return ({}, f"Error parsing content from URL '{url}': {e}")
 
-# Example placeholder:
-# with st.container():
-#     st.markdown('<div class="card">', unsafe_allow_html=True)
-#     st.markdown('<div class="section-header">📊 Prediction Results</div>', unsafe_allow_html=True)
-#     # Show your results here
-#     st.markdown('</div>', unsafe_allow_html=True)
+    if not text:
+        return ({}, f"No readable content found at URL '{url}' or content was too short.")
 
-# --- Feature Importance Plot (with color update) ---
+    # Apply keyword filtering and sentiment analysis
+    analyzer = SentimentIntensityAnalyzer()
+    
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    relevant_sentences = [s for s in sentences if any(kw in s.lower() for kw in KEYWORDS) and 5 <= len(s.split()) <= 60]
+
+    if not relevant_sentences:
+        return ({}, f"No relevant sentences found in the article from '{url}' for sentiment analysis.")
+
+    pos_scores, neu_scores, neg_scores, compound_scores = [], [], [], []
+    for sentence in relevant_sentences:
+        sentiment = analyzer.polarity_scores(sentence)
+        pos_scores.append(sentiment['pos'])
+        neu_scores.append(sentiment['neu'])
+        neg_scores.append(sentiment['neg'])
+        compound_scores.append(sentiment['compound'])
+
+    # Calculate average scores for this single URL
+    avg_pos = sum(pos_scores) / len(pos_scores)
+    avg_neu = sum(neu_scores) / len(neu_scores)
+    avg_neg = sum(neg_scores) / len(neg_scores)
+    avg_comp = sum(compound_scores) / len(compound_scores)
+
+    # Determine category for this single URL
+    if avg_comp >= 0.3: # Using user-defined threshold
+        category = "Positive"
+    elif avg_comp <= -0.3: # Using user-defined threshold
+        category = "Negative"
+    else:
+        category = "Neutral"
+
+    sentiment_result = {
+        'Avg_Positive': avg_pos,
+        'Avg_Neutral': avg_neu,
+        'Avg_Negative': avg_neg,
+        'Avg_Compound': avg_comp,
+        'category': category # Include category in the returned dict
+    }
+    return sentiment_result, "\n\n".join(relevant_sentences)
+
+def analyze_multiple_urls_sentiment(urls: list[str]) -> tuple[dict, dict]:
+    """
+    Analyzes sentiment from multiple URLs and returns average scores and detailed results.
+    Returns (overall_sentiment_dict, detailed_results_dict).
+    """
+    all_pos_scores, all_neu_scores, all_neg_scores, all_comp_scores = [], [], [], []
+    detailed_results = {}
+
+    for url in urls:
+        if url.strip(): # Ensure URL is not empty
+            sentiment_for_url, _ = fetch_and_analyze_single_url(url.strip()) # Don't need extracted_text here
+            
+            if sentiment_for_url and 'Avg_Compound' in sentiment_for_url: # Successfully got sentiment scores
+                all_pos_scores.append(sentiment_for_url['Avg_Positive'])
+                all_neu_scores.append(sentiment_for_url['Avg_Neutral'])
+                all_neg_scores.append(sentiment_for_url['Avg_Negative'])
+                all_comp_scores.append(sentiment_for_url['Avg_Compound'])
+                detailed_results[url] = {"status": "Success", "sentiment": sentiment_for_url}
+            else:
+                detailed_results[url] = {"status": "Failed", "error": _} # _ contains error message
+
+    if not all_comp_scores: # No URLs were successfully analyzed
+        return ({'Avg_Positive': 0.0, 'Avg_Neutral': 1.0, 'Avg_Negative': 0.0, 'Avg_Compound': 0.0, 'category': 'Neutral'}, detailed_results) # Default category for no successful URLs
+
+    # Calculate overall averages
+    overall_avg_pos = sum(all_pos_scores) / len(all_pos_scores)
+    overall_avg_neu = sum(all_neu_scores) / len(all_neu_scores)
+    overall_avg_neg = sum(all_neg_scores) / len(all_neg_scores)
+    overall_avg_comp = sum(all_comp_scores) / len(all_comp_scores)
+
+    # Apply the user-defined thresholds for overall category
+    if overall_avg_comp >= 0.3: # Changed from 0.05 to 0.3
+        overall_category = "Positive"
+    elif overall_avg_comp <= -0.3: # Changed from -0.05 to -0.3
+        overall_category = "Negative"
+    else:
+        overall_category = "Neutral"
+
+    overall_sentiment_result = {
+        'Avg_Positive': overall_avg_pos,
+        'Avg_Neutral': overall_avg_neu,
+        'Avg_Negative': overall_avg_neg,
+        'Avg_Compound': overall_avg_comp,
+        'category': overall_category
+    }
+    return overall_sentiment_result, detailed_results
+
+
+# --- Credit Rating Definitions ---
+CREDIT_RATING_DEFINITIONS = {
+    'AAA': "Highest quality, lowest risk. Extremely strong capacity to meet financial commitments.",
+    'AA': "Very high quality, very low risk. Very strong capacity to meet financial commitments.",
+    'A': "High quality, low risk. Strong capacity to meet financial commitments, but somewhat more susceptible to adverse economic conditions.",
+    'BBB': "Good quality, moderate risk. Adequate capacity to meet financial commitments, but more susceptible to adverse economic conditions than higher-rated categories.",
+    'BB': "Speculative, significant risk. Less vulnerable in the near term but faces major uncertainties and exposure to adverse business, financial, or economic conditions.",
+    'B': "Highly speculative, high risk. Significant credit risk, with a limited margin of safety.",
+    'CCC': "Substantial credit risk. Currently vulnerable, and dependent upon favorable business, financial, and economic conditions to meet financial commitments.",
+    'CC': "Very high credit risk. Highly vulnerable, with default a strong possibility.",
+    'C': "Extremely high credit risk. Default is imminent or has occurred, with little prospect for recovery.",
+    'D': "Default. The company has defaulted on its financial obligations."
+}
+
+# --- Feature Importance Plotting Function ---
 def plot_feature_contributions(model, feature_columns, model_label):
+    """
+    Calculates and plots global feature importances for the given model.
+    The importances are scaled such that the most important feature has a value of 10.
+    The X-axis is set to 0-10.
+    """
     try:
         feature_importances = None
         
@@ -202,520 +459,487 @@ def plot_feature_contributions(model, feature_columns, model_label):
             st.info(f"Could not retrieve feature importances for {model_label}.")
             return
 
+        # Scale the importances such that the maximum value becomes 10
         max_importance = np.max(feature_importances)
         if max_importance > 0:
             scaled_importances = (feature_importances / max_importance) * 10
         else:
-            scaled_importances = np.zeros_like(feature_importances)
+            scaled_importances = np.zeros_like(feature_importances) # All zeros if max is zero
 
+
+        # Create a DataFrame for feature importances
         importance_df = pd.DataFrame({
             'Feature': feature_columns,
-            'Importance': scaled_importances
+            'Importance': scaled_importances # Use scaled importances for plotting
         })
+        
+        # Sort by importance for better visualization
         importance_df = importance_df.sort_values(by='Importance', ascending=True)
 
-        fig, ax = plt.subplots(figsize=(8, max(5, len(feature_columns) * 0.3)))
-        bars = ax.barh(importance_df['Feature'], importance_df['Importance'], color=ACCENT_COLOR)
-        ax.set_facecolor(SECONDARY_COLOR)
-        fig.patch.set_facecolor('#f9f9f9')
-        ax.grid(axis='x', linestyle='--', alpha=0.7)
-        ax.set_xlabel("Feature Importance Score (Scaled to Max 10)", fontsize=12, color=PRIMARY_COLOR)
-        ax.set_title(f"Overall Feature Contributions:\n{model_label}", fontsize=14, fontweight='bold', color=PRIMARY_COLOR)
+        fig, ax = plt.subplots(figsize=(8, max(5, len(feature_columns) * 0.3))) # Dynamic height, slightly smaller for columns
+        ax.barh(importance_df['Feature'], importance_df['Importance'], color='#4CAF50') # Green bars
+        ax.set_xlabel("Feature Importance Score (Scaled to Max 10)") # Updated label
+        ax.set_title(f"Overall Feature Contributions:\n{model_label}", fontsize=10) # Smaller title for columns
+        
+        # Set X-axis limits to 0-10
         ax.set_xlim(0, 10)
-        ax.set_xticks(np.arange(0, 11, 1))
-        ax.set_xticklabels([str(int(x)) for x in np.arange(0, 11, 1)], color=PRIMARY_COLOR)
+        
+        # Set X-axis ticks and labels to 0-10 (integers)
+        ax.set_xticks(np.arange(0, 11, 1)) # Ticks from 0 to 10, step 1
+        ax.set_xticklabels([str(int(x)) for x in np.arange(0, 11, 1)]) # Labels as integers
 
         plt.tight_layout()
         st.pyplot(fig)
-        plt.close(fig)
+        plt.close(fig) # Close the figure to free memory
+
     except Exception as e:
         st.error(f"Could not generate Feature Importance plot for {model_label}: {e}. Ensure the model object has a 'feature_importances_' attribute or a 'get_feature_importance()' method.")
-How to integrate this:
-Replace your existing st.title and section headers with the styled divs using unsafe_allow_html=True.
-
-Wrap your main input blocks and result displays inside <div class="card"> containers (done above).
-
-Increase financial input columns to 3 per row for better density.
-
-Use the updated plot colors and fonts for feature importance plots.
-
-Buttons styled with accent gold and full width.
-
-Add icons like 💰, 📰, 📊 in headers to reinforce financial theme.
-
-Add the CSS style block at the top for global font and color styling.
-
-If you want, I can also help you fully place your existing prediction code and all UI code inside this style framework, just ask! Would you like me to?
 
 
-
-
-
-
-
-
-You said:
-yes please
-
-
-ChatGPT said:
-Absolutely! Here's your full Streamlit UI code with all your existing logic wrapped inside the professional, financial-themed style and layout.
-I've integrated:
-
-The CSS styling for fonts, colors, buttons, expanders, etc.
-
-Your financial input section with 3 columns per row inside cards
-
-News URL input in a styled card
-
-Prediction button styled and inside a card
-
-Prediction results and feature importance plots inside cards and styled headers
-
-Proper spacing and icons for a polished look
-
-Complete integrated code:
-
-python
-Copy
-Edit
-import streamlit as st
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-from catboost import CatBoostClassifier
-from sklearn.ensemble import RandomForestClassifier
-import lightgbm as lgb
-import xgboost as xgb
-
-# --- Define your constants here or import them ---
-FINANCIAL_CATEGORIES = { 
-    # Your categories and financial columns dictionary here
-}
-min_values = {}       # Your min values dict
-max_values = {}       # Your max values dict
-default_values = {}   # Your default values dict
-step_values = {}      # Your step values dict
-
-FINANCIAL_COLS = []   # List of financial columns used in model A
-SENTIMENT_COLS = []   # List of sentiment columns
-ALL_COLS = []         # All columns used in model B
-
-CREDIT_RATING_DEFINITIONS = {
-    # Your credit rating definitions dictionary here
+# --- Default Values and Ranges for Inputs ---
+default_values = {
+    'currentRatio': 1.8, 'quickRatio': 1.0, 'cashRatio': 0.25, 'daysOfSalesOutstanding': 35.0,
+    'netProfitMargin': 0.10, 'pretaxProfitMargin': 0.12, 'grossProfitMargin': 0.30,
+    'returnOnAssets': 0.08, 'returnOnEquity': 0.20, 'assetTurnover': 1.2,
+    'fixedAssetTurnover': 3.5, 'debtRatio': 0.4, 'effectiveTaxRate': 0.28,
+    'freeCashFlowOperatingCashFlowRatio': 0.75, 'freeCashFlowPerShare': 2.5, 'cashPerShare': 3.0,
+    'enterpriseValueMultiple': 12.0, 'operatingCashFlowPerShare': 3.0, 'operatingCashFlowSalesRatio': 0.12, 'payablesTurnover': 9.0
 }
 
-# Placeholder for your model and scaler dicts
-models = {}
-scalers = {}
+min_values = {
+    'currentRatio': 0.0, 'quickRatio': 0.0, 'cashRatio': 0.0, 'daysOfSalesOutstanding': 0.0,
+    'netProfitMargin': -5.0, 'pretaxProfitMargin': -5.0, 'grossProfitMargin': -5.0,
+    'returnOnAssets': -5.0, 'returnOnEquity': -5.0, 'assetTurnover': 0.0,
+    'fixedAssetTurnover': 0.0, 'debtRatio': 0.0, 'effectiveTaxRate': -0.1,
+    'freeCashFlowOperatingCashFlowRatio': -10.0, 'freeCashFlowPerShare': -100.0, 'cashPerShare': 0.0,
+    'enterpriseValueMultiple': 0.0,
+    'operatingCashFlowPerShare': -100.0, 'operatingCashFlowSalesRatio': -5.0, 'payablesTurnover': 0.0
+}
 
-# Placeholder variables from your session_state
-if "financial_inputs" not in st.session_state:
-    st.session_state.financial_inputs = {}
+max_values = {
+    'currentRatio': 10.0, 'quickRatio': 50.0, 'cashRatio': 10.0, 'daysOfSalesOutstanding': 365.0,
+    'netProfitMargin': 10.0, 'pretaxProfitMargin': 10.0, 'grossProfitMargin': 10.0,
+    'returnOnAssets': 10.0, 'returnOnEquity': 10.0, 'assetTurnover': 50.0,
+    'fixedAssetTurnover': 20.0, 'debtRatio': 10.0, 'effectiveTaxRate': 10.0,
+    'freeCashFlowOperatingCashFlowRatio': 50.0, 'freeCashFlowPerShare': 100.0, 'cashPerShare': 50.0,
+    'enterpriseValueMultiple': 50.0,
+    'operatingCashFlowPerShare': 100.0, 'operatingCashFlowSalesRatio': 10.0, 'payablesTurnover': 20.0
+}
 
-if "news_article_urls" not in st.session_state:
-    st.session_state.news_article_urls = ""
+step_values = {
+    'currentRatio': 0.01, 'quickRatio': 0.01, 'cashRatio': 0.01, 'daysOfSalesOutstanding': 1.0,
+    'netProfitMargin': 0.001, 'pretaxProfitMargin': 0.001, 'grossProfitMargin': 0.001,
+    'returnOnAssets': 0.001, 'returnOnEquity': 0.001, 'assetTurnover': 0.01,
+    'fixedAssetTurnover': 0.01, 'debtRatio': 0.001, 'effectiveTaxRate': 0.001,
+    'freeCashFlowOperatingCashFlowRatio': 0.01, 'freeCashFlowPerShare': 0.1, 'cashPerShare': 0.1,
+    'enterpriseValueMultiple': 0.1,
+    'operatingCashFlowPerShare': 0.1, 'operatingCashFlowSalesRatio': 0.001, 'payablesTurnover': 0.01
+}
 
-if "company_name" not in st.session_state:
-    st.session_state.company_name = "Your Company"
 
-# Flag for whether sentiment input is needed (set appropriately in your code)
-sentiment_input_needed = True
+# --- Initialize Session State for Reset Button and Prediction Triggers ---
+if 'financial_inputs' not in st.session_state:
+    st.session_state.financial_inputs = {col: default_values.get(col, 0.0) for col in FINANCIAL_COLS}
+if 'news_article_urls' not in st.session_state: # Changed to store multiple URLs
+    st.session_state.news_article_urls = "" # Initialize as blank
+if 'company_name' not in st.session_state:
+    st.session_state.company_name = "Example Corp"
+if 'last_extracted_texts' not in st.session_state: # To store extracted texts for display
+    st.session_state.last_extracted_texts = {}
 
-# Selected model from your UI dropdown (set appropriately)
-selected_model_name = "Model A (Financial Only)"  # example
-selected_model = models.get(selected_model_name, None)
-selected_scaler = scalers.get(selected_model_name, None)
 
-# Label encoder placeholder
-label_encoder = None
-
-# Reset inputs function placeholder
 def reset_inputs():
-    st.session_state.financial_inputs = {}
-    st.session_state.news_article_urls = ""
+    st.session_state.financial_inputs = {col: default_values.get(col, 0.0) for col in FINANCIAL_COLS}
+    st.session_state.news_article_urls = "" # Reset to blank
+    st.session_state.company_name = "Example Corp"
+    st.session_state.last_extracted_texts = {}
 
-# Prediction function placeholder
-def _predict_single_model(model, scaler, input_df, features, label_enc):
-    # Your prediction logic here
-    # Return dummy results for now
-    return "AAA", {"AAA": 0.75, "AA": 0.15, "A": 0.10}
 
-# Sentiment analysis placeholder function
-def analyze_multiple_urls_sentiment(urls):
-    # Your sentiment analysis logic here
-    # Return dummy sentiment
-    overall = {
-        'Avg_Compound': 0.2,
-        'Avg_Positive': 0.5,
-        'Avg_Neutral': 0.4,
-        'Avg_Negative': 0.1,
-        'category': 'Positive'
-    }
-    details = {url: {"status": "Success", "sentiment": overall} for url in urls}
-    return overall, details
+# --- Main UI Layout ---
+st.title("Company Financial Health & News Sentiment Analyzer")
 
-# Feature importance plot function with financial color styling
-def plot_feature_contributions(model, feature_columns, model_label):
-    PRIMARY_COLOR = "#0B3954"
-    SECONDARY_COLOR = "#BFD7EA"
-    ACCENT_COLOR = "#FF9F1C"
-    try:
-        feature_importances = None
+# Navigation Bar (using st.tabs)
+tab_about, tab_how_to_use = st.tabs(["About Credit Ratings", "How to Use This Website"])
+
+with tab_about:
+    st.markdown("""
+    ### What is a Credit Rating?
+    A credit rating is an independent assessment of a company's financial strength and its ability to meet its financial obligations. These ratings are crucial for investors, lenders, and businesses as they provide a quick snapshot of creditworthiness, influencing borrowing costs and investment decisions. Ratings typically range from 'AAA' (highest quality, lowest risk) to 'D' (default).
+
+    ### How are Credit Ratings Calculated?
+    Credit rating agencies use a comprehensive approach, combining quantitative financial analysis with qualitative factors.
+    * **Financial Metrics (Quantitative):** This involves analyzing a company's balance sheet, income statement, and cash flow statement. Key ratios like liquidity (e.g., current ratio), profitability (e.g., gross profit margin), leverage (e.g., debt ratio), and efficiency (e.g., days of sales outstanding) are vital.
+    * **News Sentiment (Qualitative):** Public sentiment and news coverage can significantly impact a company's perceived risk. Positive news might signal stability and growth, while negative news could indicate potential challenges.
+
+    This application uses eight machine learning models, grouped into 'Model A' (Financial Only) and 'Model B' (Financial + Sentiment):
+    * **CatBoost Model A (Financial Only):** Predicts credit ratings based solely on a set of key financial metrics using a CatBoost Classifier.
+    * **CatBoost Model B (Financial + Sentiment):** Combines financial metrics with sentiment analysis from news articles using a CatBoost Classifier.
+    * **RandomForest Model A (Financial Only):** Predicts credit ratings based solely on a set of key financial metrics using a RandomForest Classifier.
+    * **RandomForest Model B (Financial + Sentiment):** Combines financial metrics with sentiment analysis from news articles using a RandomForest Classifier.
+    * **LightGBM Model A (Financial Only):** Predicts credit ratings based solely on a set of key financial metrics using a LightGBM Classifier.
+    * **LightGBM Model B (Financial + Sentiment):** Combines financial metrics with sentiment analysis from news articles using a LightGBM Classifier.
+    * **XGBoost Model A (Financial Only):** Predicts credit ratings based solely on a set of key financial metrics using an XGBoost Classifier.
+    * **XGBoost Model B (Financial + Sentiment):** Combines financial metrics with sentiment analysis from news articles using an XGBoost Classifier.
+    """)
+
+with tab_how_to_use:
+    st.markdown("""
+    ### How to Use This Website
+    1.  **Enter Company Name:** Provide the name of the company you are analyzing.
+    2.  **Select a Model:** Choose one of the individual models, or an "All Models" option, from the dropdown.
+    3.  **Input Financial Metrics:** Fill in the values for the various financial ratios. Enter percentage-like metrics (e.g., margins, returns) as decimals (e.g., `0.10` for 10%).
+    4.  **Enter News Article URL(s) (for Model B types):** If you select any "Model B" option (individual or "All Model B"), provide one or more relevant news article URLs, one per line. The app will attempt to scrape and analyze the content and average the sentiment.
+    5.  **Predict:** Click the "Predict Credit Rating" button to get a prediction and feature contributions.
+    6.  **Review Results:** The predicted rating(s), probabilities, and key feature contributions will appear. For "All Models" options, results will be organized into side-by-side columns.
+    7.  **Reset Inputs:** Use the "Reset All Inputs" button to clear the form and start fresh.
+    """)
+
+st.markdown("---") # Separator below the tabs
+
+st.header("Enter Company Details")
+
+st.session_state.company_name = st.text_input("Company Name", value=st.session_state.company_name, key="company_name_input")
+
+st.markdown("---")
+
+# --- Model Selection ---
+st.header("Select Prediction Model")
+
+# Define the model options for the selectbox
+model_options = list(models.keys())
+model_options.sort() # Sort individual models alphabetically
+model_options_grouped = [
+    "--- Individual Models ---"
+] + model_options + [
+    "--- Compare Models ---",
+    "All Model A (Financial Only)",
+    "All Model B (Financial + Sentiment)",
+    "All Models (A & B)"
+]
+
+selected_model_name = st.selectbox(
+    "Choose a model for prediction:",
+    model_options_grouped,
+    key="model_selector"
+)
+
+# Determine which features are needed based on the selected option
+sentiment_input_needed = False
+required_features = [] # Initialize with empty list
+
+if selected_model_name in models: # An individual model is selected
+    selected_model = models[selected_model_name]
+    selected_scaler = scalers[selected_model_name]
+    if "Financial Only" in selected_model_name:
+        required_features = FINANCIAL_COLS
+        st.info(f"You selected '{selected_model_name}'. This model uses only financial metrics.")
+    else: # Implies "Financial + Sentiment"
+        required_features = ALL_COLS
+        st.info(f"You selected '{selected_model_name}'. This model uses both financial metrics and news sentiment.")
+        sentiment_input_needed = True
+elif selected_model_name == "All Model A (Financial Only)":
+    required_features = FINANCIAL_COLS
+    st.info("You selected 'All Model A'. This will run all four 'Financial Only' models and display them side-by-side.")
+    sentiment_input_needed = False
+elif selected_model_name == "All Model B (Financial + Sentiment)":
+    required_features = ALL_COLS
+    st.info("You selected 'All Model B'. This will run all four 'Financial + Sentiment' models and display them side-by-side.")
+    sentiment_input_needed = True
+elif selected_model_name == "All Models (A & B)":
+    required_features = ALL_COLS # All models use all features eventually for Model B types
+    st.info("You selected 'All Models (A & B)'. This will run all eight models and display them side-by-side.")
+    sentiment_input_needed = True
+else: # Placeholder or separator selected
+    selected_model = None
+    selected_scaler = None
+    st.warning("Please select a valid model or comparison option.")
+
+
+st.markdown("---")
+
+# --- Input Fields for Financial Metrics (Enhanced UI) ---
+st.header("Enter Financial Metrics")
+st.markdown("*(All values should be numerical. Enter percentages as decimals, e.g., 0.1 for 10%)*")
+
+# Iterate through categories and create expanders for each
+for category, cols_in_category in FINANCIAL_CATEGORIES.items():
+    with st.expander(f"**{category}**"):
+        num_cols_per_row_in_expander = 2
+        expander_cols = st.columns(num_cols_per_row_in_expander)
         
-        if isinstance(model, CatBoostClassifier):
-            feature_importances = model.get_feature_importance()
-        elif isinstance(model, RandomForestClassifier) or isinstance(model, xgb.XGBClassifier):
-            feature_importances = model.feature_importances_
-        elif isinstance(model, lgb.Booster):
-            feature_importances = model.feature_importance()
-        else:
-            st.warning(f"Feature importance plotting not supported for model type: {type(model).__name__}.")
-            return
+        for i, col_name in enumerate(cols_in_category):
+            with expander_cols[i % num_cols_per_row_in_expander]:
+                st.write(f"**{col_name}**")
+                if 'Margin' in col_name or 'ReturnOn' in col_name or 'TaxRate' in col_name or 'Ratio' in col_name:
+                    st.caption("Enter as decimal (e.g., 0.1 for 10%)")
+                
+                metric_help_text = {
+                    'currentRatio': 'Measures short-term liquidity: current assets / current liabilities.',
+                    'quickRatio': 'Measures short-term liquidity excluding inventory: (current assets - inventory) / current liabilities.',
+                    'cashRatio': 'Most conservative liquidity measure: cash / current liabilities.',
+                    'daysOfSalesOutstanding': 'Average number of days to collect accounts receivable.',
+                    'netProfitMargin': 'Percentage of revenue left after all expenses, including taxes.',
+                    'pretaxProfitMargin': 'Percentage of revenue left before taxes.',
+                    'grossProfitMargin': 'Percentage of revenue left after deducting cost of goods sold.',
+                    'returnOnAssets': 'How efficiently a company uses its assets to generate earnings.',
+                    'returnOnEquity': 'How much profit a company generates for each dollar of shareholders\' equity.',
+                    'assetTurnover': 'How efficiently a company uses its assets to generate sales.',
+                    'fixedAssetTurnover': 'How efficiently a company uses its fixed assets to generate sales.',
+                    'debtRatio': 'Total debt / total assets. Measures leverage.',
+                    'effectiveTaxRate': 'The actual rate of tax paid by a company on its earnings.',
+                    'freeCashFlowOperatingCashFlowRatio': 'Free cash flow / operating cash flow. Measures cash available after capital expenditures.',
+                    'freeCashFlowPerShare': 'Free cash flow available per share.',
+                    'cashPerShare': 'Cash and cash equivalents per outstanding share.',
+                    'enterpriseValueMultiple': 'Enterprise Value / EBITDA. Valuation multiple.',
+                    'operatingCashFlowPerShare': 'Cash generated from operations per share.',
+                    'operatingCashFlowSalesRatio': 'Operating cash flow / sales. Measures cash generated from each dollar of sales.',
+                    'payablesTurnover': 'How many times a company pays off its accounts payable during a period.'
+                }
+                st.info(metric_help_text.get(col_name, "No specific help text available."), icon="ℹ️")
 
-        if feature_importances is None or len(feature_importances) == 0:
-            st.info(f"Could not retrieve feature importances for {model_label}.")
-            return
+                st.session_state.financial_inputs[col_name] = st.number_input(
+                    f"Value for {col_name}",
+                    min_value=min_values.get(col_name, 0.0),
+                    max_value=max_values.get(col_name, 1000.0),
+                    value=st.session_state.financial_inputs.get(col_name, default_values.get(col_name, 0.0)),
+                    step=step_values.get(col_name, 0.01),
+                    key=f"fin_input_{col_name}" # Unique key for each input
+                )
 
-        max_importance = np.max(feature_importances)
-        if max_importance > 0:
-            scaled_importances = (feature_importances / max_importance) * 10
-        else:
-            scaled_importances = np.zeros_like(feature_importances)
+# Convert financial inputs to a DataFrame row
+financial_df_row = pd.DataFrame([st.session_state.financial_inputs])
 
-        importance_df = pd.DataFrame({
-            'Feature': feature_columns,
-            'Importance': scaled_importances
-        })
-        importance_df = importance_df.sort_values(by='Importance', ascending=True)
+st.markdown("---")
 
-        fig, ax = plt.subplots(figsize=(8, max(5, len(feature_columns) * 0.3)))
-        bars = ax.barh(importance_df['Feature'], importance_df['Importance'], color=ACCENT_COLOR)
-        ax.set_facecolor(SECONDARY_COLOR)
-        fig.patch.set_facecolor('#f9f9f9')
-        ax.grid(axis='x', linestyle='--', alpha=0.7)
-        ax.set_xlabel("Feature Importance Score (Scaled to Max 10)", fontsize=12, color=PRIMARY_COLOR)
-        ax.set_title(f"Overall Feature Contributions:\n{model_label}", fontsize=14, fontweight='bold', color=PRIMARY_COLOR)
-        ax.set_xlim(0, 10)
-        ax.set_xticks(np.arange(0, 11, 1))
-        ax.set_xticklabels([str(int(x)) for x in np.arange(0, 11, 1)], color=PRIMARY_COLOR)
-
-        plt.tight_layout()
-        st.pyplot(fig)
-        plt.close(fig)
-    except Exception as e:
-        st.error(f"Could not generate Feature Importance plot for {model_label}: {e}.")
-
-# --- CSS Styling ---
-PRIMARY_COLOR = "#0B3954"
-SECONDARY_COLOR = "#BFD7EA"
-ACCENT_COLOR = "#FF9F1C"
-TEXT_COLOR = "#333333"
-
-st.markdown(f"""
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;700&display=swap');
-
-    html, body, [class*="css"] {{
-        font-family: 'Roboto Slab', serif;
-        color: {TEXT_COLOR};
-        background-color: #f7f9fc;
-    }}
-    .title {{
-        font-size: 38px;
-        font-weight: 700;
-        color: {PRIMARY_COLOR};
-        text-transform: uppercase;
-        margin-bottom: 15px;
-        text-align: center;
-    }}
-    .section-header {{
-        font-size: 24px;
-        font-weight: 600;
-        margin-top: 30px;
-        margin-bottom: 15px;
-        color: {PRIMARY_COLOR};
-        border-bottom: 3px solid {ACCENT_COLOR};
-        padding-bottom: 5px;
-    }}
-    .caption-text {{
-        font-size: 12px;
-        color: #666666;
-        font-style: italic;
-        margin-top: -10px;
-        margin-bottom: 10px;
-    }}
-    .card {{
-        background: #ffffff;
-        padding: 20px 30px;
-        margin-bottom: 30px;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-        border-radius: 12px;
-    }}
-    div.stButton > button:first-child {{
-        background-color: {ACCENT_COLOR};
-        color: white;
-        font-weight: 600;
-        border-radius: 10px;
-        height: 45px;
-        width: 100%;
-        font-size: 18px;
-        transition: background-color 0.3s ease;
-    }}
-    div.stButton > button:first-child:hover {{
-        background-color: #cc7a00;
-        color: white;
-    }}
-    .stTextInput > label, .stNumberInput > label {{
-        font-weight: 600;
-        color: {PRIMARY_COLOR};
-    }}
-    /* Adjust expander header font */
-    .streamlit-expanderHeader {{
-        font-weight: 600 !important;
-        color: {PRIMARY_COLOR} !important;
-        font-size: 18px !important;
-    }}
-    </style>
-""", unsafe_allow_html=True)
-
-# --- Page Title ---
-st.markdown('<div class="title">Company Financial Health & News Sentiment Analyzer</div>', unsafe_allow_html=True)
-
-# --- Financial Inputs Section ---
-with st.container():
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="section-header">💰 Enter Financial Metrics</div>', unsafe_allow_html=True)
-    st.markdown("*(All values should be numerical. Enter percentages as decimals, e.g., 0.1 for 10%)*")
-
-    num_cols_per_row_in_expander = 3
-    for category, cols_in_category in FINANCIAL_CATEGORIES.items():
-        with st.expander(f"**{category}**", expanded=False):
-            expander_cols = st.columns(num_cols_per_row_in_expander)
-            for i, col_name in enumerate(cols_in_category):
-                with expander_cols[i % num_cols_per_row_in_expander]:
-                    st.write(f"**{col_name}**")
-                    if 'Margin' in col_name or 'ReturnOn' in col_name or 'TaxRate' in col_name or 'Ratio' in col_name:
-                        st.caption("Enter as decimal (e.g., 0.1 for 10%)")
-                    
-                    metric_help_text = {
-                        'currentRatio': 'Measures short-term liquidity: current assets / current liabilities.',
-                        'quickRatio': 'Measures short-term liquidity excluding inventory: (current assets - inventory) / current liabilities.',
-                        'cashRatio': 'Most conservative liquidity measure: cash / current liabilities.',
-                        'daysOfSalesOutstanding': 'Average number of days to collect accounts receivable.',
-                        'netProfitMargin': 'Percentage of revenue left after all expenses, including taxes.',
-                        'pretaxProfitMargin': 'Percentage of revenue left before taxes.',
-                        'grossProfitMargin': 'Percentage of revenue left after deducting cost of goods sold.',
-                        'returnOnAssets': 'How efficiently a company uses its assets to generate earnings.',
-                        'returnOnEquity': 'How much profit a company generates for each dollar of shareholders\' equity.',
-                        'assetTurnover': 'How efficiently a company uses its assets to generate sales.',
-                        'fixedAssetTurnover': 'How efficiently a company uses its fixed assets to generate sales.',
-                        'debtRatio': 'Total debt / total assets. Measures leverage.',
-                        'effectiveTaxRate': 'The actual rate of tax paid by a company on its earnings.',
-                        'freeCashFlowOperatingCashFlowRatio': 'Free cash flow / operating cash flow. Measures cash available after capital expenditures.',
-                        'freeCashFlowPerShare': 'Free cash flow available per share.',
-                        'cashPerShare': 'Cash and cash equivalents per outstanding share.',
-                        'enterpriseValueMultiple': 'Enterprise Value / EBITDA. Valuation multiple.',
-                        'operatingCashFlowPerShare': 'Cash generated from operations per share.',
-                        'operatingCashFlowSalesRatio': 'Operating cash flow / sales. Measures cash generated from each dollar of sales.',
-                        'payablesTurnover': 'How many times a company pays off its accounts payable during a period.'
-                    }
-                    st.info(metric_help_text.get(col_name, "No specific help text available."), icon="ℹ️")
-
-                    st.session_state.financial_inputs[col_name] = st.number_input(
-                        f"Value for {col_name}",
-                        min_value=min_values.get(col_name, 0.0),
-                        max_value=max_values.get(col_name, 1000.0),
-                        value=st.session_state.financial_inputs.get(col_name, default_values.get(col_name, 0.0)),
-                        step=step_values.get(col_name, 0.01),
-                        key=f"fin_input_{col_name}"
-                    )
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# --- Sentiment Input Section ---
+# --- Sentiment Input (URL-based, multiple URLs) ---
+overall_sentiment_result = None
+urls_list = [] # Initialize urls_list here to ensure it's always defined
 if sentiment_input_needed:
-    with st.container():
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div class="section-header">📰 News Article URL(s) for Sentiment Analysis</div>', unsafe_allow_html=True)
+    st.header("Enter News Article URL(s) (for Sentiment Analysis)")
+    st.session_state.news_article_urls = st.text_area(
+        "Paste News Article URL(s) Here (one per line)",
+        value=st.session_state.news_article_urls,
+        height=150,
+        key="news_article_urls_input"
+    )
 
-        st.session_state.news_article_urls = st.text_area(
-            "Paste News Article URL(s) Here (one per line)",
-            value=st.session_state.news_article_urls,
-            height=150,
-            key="news_article_urls_input"
-        )
+    urls_list = [url.strip() for url in st.session_state.news_article_urls.split('\n') if url.strip()]
 
-        st.markdown('</div>', unsafe_allow_html=True)
-
-# --- Prediction Button Section ---
-with st.container():
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    if st.button(f"Predict Credit Rating(s)", key="predict_button"):
-        # Prepare input data
-        current_financial_inputs_df = pd.DataFrame([st.session_state.financial_inputs])
-
-        # Validate inputs before proceeding
-        if not all(val is not None for val in st.session_state.financial_inputs.values()):
-            st.warning("Please fill in all financial metrics.")
-            st.stop()
-
-        # Extract URLs list
-        urls_list = [url.strip() for url in st.session_state.news_article_urls.split('\n') if url.strip()] if sentiment_input_needed else []
-
-        # Perform sentiment analysis if needed
-        if (selected_model_name == "All Model B (Financial + Sentiment)" or "Model B (Financial + Sentiment)" in selected_model_name):
-            if not urls_list:
-                st.warning("Please enter news article URL(s) for sentiment analysis.")
-                st.stop()
+    if urls_list:
+        with st.spinner("Fetching and analyzing articles from URLs... This may take a moment for multiple links."):
             overall_sentiment_result, detailed_url_results = analyze_multiple_urls_sentiment(urls_list)
-            if not overall_sentiment_result or 'category' not in overall_sentiment_result:
-                st.warning("Sentiment analysis failed. Please check URLs.")
-                st.stop()
-        else:
-            overall_sentiment_result = None
+        
+        if overall_sentiment_result and 'category' in overall_sentiment_result:
+            st.subheader("Overall News Article Sentiment (Average):")
+            st.info(f"VADER Compound Score: {overall_sentiment_result['Avg_Compound']:.2f} (Positive: {overall_sentiment_result['Avg_Positive']:.2f}, Neutral: {overall_sentiment_result['Avg_Neutral']:.2f}, Negative: {overall_sentiment_result['Avg_Negative']:.2f})")
 
-        # Validate model selection
-        if selected_model_name.startswith("---"):
-            st.warning("Please select a valid model or comparison option.")
-            st.stop()
-
-        # Begin results display
-        st.header("3. Prediction Result(s)")
-
-        # Single model prediction
-        if selected_model_name in models:
-            input_df_for_prediction = current_financial_inputs_df.copy()
-
-            if "Financial Only" in selected_model_name:
-                sentiment_features_for_model = {col: 0.0 for col in SENTIMENT_COLS}
-                all_inputs = {**st.session_state.financial_inputs, **sentiment_features_for_model}
-                input_df_for_prediction = pd.DataFrame([all_inputs])
-                required_features_for_model_call = FINANCIAL_COLS
+            if overall_sentiment_result['category'] == "Positive":
+                st.success(f"Overall Sentiment Category: **{overall_sentiment_result['category']}** 😊")
+            elif overall_sentiment_result['category'] == "Negative":
+                st.error(f"Overall Sentiment Category: **{overall_sentiment_result['category']}** 😠")
             else:
-                sentiment_features_for_model = {col: overall_sentiment_result.get(col, 0.0) for col in SENTIMENT_COLS} if overall_sentiment_result else {col: 0.0 for col in SENTIMENT_COLS}
-                all_inputs = {**st.session_state.financial_inputs, **sentiment_features_for_model}
-                input_df_for_prediction = pd.DataFrame([all_inputs])
-                required_features_for_model_call = ALL_COLS
-
-            input_df_for_prediction = input_df_for_prediction[required_features_for_model_call]
-
-            with st.spinner(f"Predicting with {selected_model_name}..."):
-                predicted_rating, probabilities = _predict_single_model(selected_model, selected_scaler, input_df_for_prediction, required_features_for_model_call, label_encoder)
-
-                st.success(f"The predicted credit rating for {st.session_state.company_name} using **{selected_model_name}** is: **{predicted_rating}**")
-
-                with st.expander(f"What is '{predicted_rating}'?"):
-                    st.write(f"**{predicted_rating}:** {CREDIT_RATING_DEFINITIONS.get(predicted_rating, 'Definition not available.')}")
-
-                st.write("---")
-                st.subheader("Prediction Probabilities:")
-                prob_df = pd.DataFrame(probabilities.items(), columns=['Rating', 'Probability'])
-                prob_df['Probability'] = prob_df['Probability'].astype(float)
-                prob_df = prob_df.sort_values(by='Probability', ascending=False)
-                prob_df['Probability'] = prob_df['Probability'].apply(lambda x: f"{x:.2%}")
-                st.dataframe(prob_df, hide_index=True, use_container_width=True)
-
-                st.write("---")
-                st.subheader("Key Feature Contributions (Overall Importance):")
-
-                plot_feature_contributions(selected_model, required_features_for_model_call, selected_model_name)
-
+                st.info(f"Overall Sentiment Category: **{overall_sentiment_result['category']}** 😐")
+            
+            with st.expander("View Detailed URL Analysis Results"):
+                for url, result in detailed_url_results.items():
+                    st.markdown(f"**URL:** [{url}]({url})")
+                    if result["status"] == "Success":
+                        # Display only the compound score for individual URLs
+                        st.success(f"  Status: Success (Compound: {result['sentiment']['Avg_Compound']:.2f})")
+                    else:
+                        st.error(f"  Status: Failed - {result['error']}")
+                    st.markdown("---")
         else:
-            st.info("Running multiple models. Results will be displayed below.")
+            st.error("Could not perform overall sentiment analysis. Please check the URLs.")
+            # Ensure overall_sentiment_result is always a dictionary, even on error
+            overall_sentiment_result = {'Avg_Positive': 0.0, 'Avg_Neutral': 1.0, 'Avg_Negative': 0.0, 'Avg_Compound': 0.0, 'category': 'Neutral'} 
+    else:
+        st.info("Enter one or more URLs above to analyze their sentiment.")
+        # Ensure overall_sentiment_result is always a dictionary if no URLs provided
+        overall_sentiment_result = {'Avg_Positive': 0.0, 'Avg_Neutral': 1.0, 'Avg_Negative': 0.0, 'Avg_Compound': 0.0, 'category': 'Neutral'}
 
-            model_A_names = sorted([name for name in models.keys() if "Model A" in name])
-            model_B_names = sorted([name for name in models.keys() if "Model B" in name])
 
-            cols_per_row = 4
+st.markdown("---")
 
-            # All Model A
-            if model_A_names and (selected_model_name == "All Model A (Financial Only)" or selected_model_name == "All Models (A & B)"):
-                st.subheader("All Model A (Financial Only) Predictions:")
-                with st.container():
-                    for i in range(0, len(model_A_names), cols_per_row):
-                        cols = st.columns(cols_per_row)
-                        for j in range(cols_per_row):
-                            if i + j < len(model_A_names):
-                                model_name_to_run = model_A_names[i + j]
-                                model = models[model_name_to_run]
-                                scaler = scalers[model_name_to_run]
+# --- Prediction Button ---
+if st.button(f"Predict Credit Rating(s)", key="predict_button"):
+    
+    # Prepare input data based on selected model type
+    current_financial_inputs_df = pd.DataFrame([st.session_state.financial_inputs])
+    
+    # Validate inputs before proceeding
+    if not all(val is not None for val in st.session_state.financial_inputs.values()):
+        st.warning("Please fill in all financial metrics.")
+        st.stop()
+    
+    # Specific validation for Model B types that require sentiment input
+    if (selected_model_name == "All Model B (Financial + Sentiment)" or "Model B (Financial + Sentiment)" in selected_model_name) and (not urls_list or not overall_sentiment_result or 'category' not in overall_sentiment_result):
+        st.warning("Please enter valid news article URL(s) and ensure overall sentiment analysis was successful for Model B predictions.")
+        st.stop()
+    
+    if selected_model_name.startswith("---"): # If a separator is selected
+        st.warning("Please select a valid model or comparison option from the dropdown.")
+        st.stop()
 
-                                zero_sentiment_features = {col: 0.0 for col in SENTIMENT_COLS}
-                                all_inputs_for_model_A = {**st.session_state.financial_inputs, **zero_sentiment_features}
-                                input_df_for_prediction = pd.DataFrame([all_inputs_for_model_A])
+    st.header("3. Prediction Result(s)")
 
-                                features_for_model_call = FINANCIAL_COLS
-                                input_df_for_prediction = input_df_for_prediction[features_for_model_call]
+    if selected_model_name in models: # Individual model prediction
+        input_df_for_prediction = current_financial_inputs_df.copy()
+        
+        # Determine features based on individual model type
+        if "Financial Only" in selected_model_name:
+            # For Model A, sentiment features should be zeroed out
+            sentiment_features_for_model = {col: 0.0 for col in SENTIMENT_COLS}
+            all_inputs = {**st.session_state.financial_inputs, **sentiment_features_for_model}
+            input_df_for_prediction = pd.DataFrame([all_inputs])
+            required_features_for_model_call = FINANCIAL_COLS # Use only financial for Model A
+        else: # Implies "Financial + Sentiment" (Model B)
+            # Use the actual sentiment result
+            sentiment_features_for_model = {col: overall_sentiment_result.get(col, 0.0) for col in SENTIMENT_COLS}
+            all_inputs = {**st.session_state.financial_inputs, **sentiment_features_for_model}
+            input_df_for_prediction = pd.DataFrame([all_inputs])
+            required_features_for_model_call = ALL_COLS # Use all features for Model B
+        
+        input_df_for_prediction = input_df_for_prediction[required_features_for_model_call] # Ensure correct order
 
-                                with cols[j]:
-                                    st.markdown(f"**{model_name_to_run}**")
-                                    with st.spinner(f"Predicting..."):
-                                        predicted_rating, probabilities = _predict_single_model(model, scaler, input_df_for_prediction, features_for_model_call, label_encoder)
+        with st.spinner(f"Predicting with {selected_model_name}..."):
+            predicted_rating, probabilities = _predict_single_model(selected_model, selected_scaler, input_df_for_prediction, required_features_for_model_call, label_encoder)
+            
+            st.success(f"The predicted credit rating for {st.session_state.company_name} using **{selected_model_name}** is: **{predicted_rating}**")
 
-                                        if predicted_rating != "Prediction failed.":
-                                            st.success(f"Rating: **{predicted_rating}**")
-                                            with st.expander(f"What is '{predicted_rating}'?"):
-                                                st.write(f"**{predicted_rating}:** {CREDIT_RATING_DEFINITIONS.get(predicted_rating, 'Definition not available.')}")
+            with st.popover(f"What is '{predicted_rating}'?"):
+                st.write(f"**{predicted_rating}:** {CREDIT_RATING_DEFINITIONS.get(predicted_rating, 'Definition not available.')}")
 
-                                            st.markdown("**Probabilities:**")
-                                            prob_df = pd.DataFrame(probabilities.items(), columns=['Rating', 'Probability'])
-                                            prob_df['Probability'] = prob_df['Probability'].astype(float)
-                                            prob_df = prob_df.sort_values(by='Probability', ascending=False)
-                                            prob_df['Probability'] = prob_df['Probability'].apply(lambda x: f"{x:.2%}")
-                                            st.dataframe(prob_df, hide_index=True, use_container_width=True)
+            st.write("---")
+            st.subheader("Prediction Probabilities:")
+            prob_df = pd.DataFrame(probabilities.items(), columns=['Rating', 'Probability'])
+            prob_df['Probability'] = prob_df['Probability'].astype(float) # Ensure numeric for sorting
+            prob_df = prob_df.sort_values(by='Probability', ascending=False)
+            prob_df['Probability'] = prob_df['Probability'].apply(lambda x: f"{x:.2%}") # Format as percentage
+            st.dataframe(prob_df, hide_index=True, use_container_width=True)
 
-                                            st.markdown("**Feature Importance:**")
-                                            plot_feature_contributions(model, features_for_model_call, model_name_to_run)
-                                        else:
-                                            st.error(f"Prediction failed.")
-                st.markdown("---")
+            st.write("---")
+            st.subheader("Key Feature Contributions (Overall Importance):")
+            
+            plot_feature_contributions(
+                selected_model,
+                required_features_for_model_call, # Use the features actually used by the model
+                selected_model_name
+            )
 
-            # All Model B
-            if model_B_names and (selected_model_name == "All Model B (Financial + Sentiment)" or selected_model_name == "All Models (A & B)"):
-                st.subheader("All Model B (Financial + Sentiment) Predictions:")
-                with st.container():
-                    for i in range(0, len(model_B_names), cols_per_row):
-                        cols = st.columns(cols_per_row)
-                        for j in range(cols_per_row):
-                            if i + j < len(model_B_names):
-                                model_name_to_run = model_B_names[i + j]
-                                model = models[model_name_to_run]
-                                scaler = scalers[model_name_to_run]
+    else: # "All Models" options (All Model A, All Model B, All Models (A & B))
+        st.info("Running multiple models. Results will be displayed below.")
+        
+        # Filter models into A and B groups
+        model_A_names = sorted([name for name in models.keys() if "Model A" in name])
+        model_B_names = sorted([name for name in models.keys() if "Model B" in name])
 
-                                all_inputs_for_model_B = {**st.session_state.financial_inputs, **{col: overall_sentiment_result.get(col, 0.0) for col in SENTIMENT_COLS}} if overall_sentiment_result else {}
+        cols_per_row = 4
 
-                                if not all_inputs_for_model_B:
-                                    st.error("Missing inputs for Model B.")
-                                    continue
+        # --- Display All Model A (Financial Only) ---
+        # This block should only run if "All Model A" or "All Models (A & B)" is selected
+        if model_A_names and (selected_model_name == "All Model A (Financial Only)" or selected_model_name == "All Models (A & B)"):
+            st.subheader("All Model A (Financial Only) Predictions:")
+            # Use a container to group these columns for better visual separation
+            with st.container():
+                for i in range(0, len(model_A_names), cols_per_row):
+                    cols = st.columns(cols_per_row)
+                    for j in range(cols_per_row):
+                        if i + j < len(model_A_names):
+                            model_name_to_run = model_A_names[i + j]
+                            model = models[model_name_to_run]
+                            scaler = scalers[model_name_to_run]
 
-                                input_df_for_prediction = pd.DataFrame([all_inputs_for_model_B])
-                                features_for_model_call = ALL_COLS
-                                input_df_for_prediction = input_df_for_prediction[features_for_model_call]
+                            # For Model A, explicitly set sentiment features to zero
+                            zero_sentiment_features = {col: 0.0 for col in SENTIMENT_COLS}
+                            all_inputs_for_model_A = {**st.session_state.financial_inputs, **zero_sentiment_features}
+                            input_df_for_prediction = pd.DataFrame([all_inputs_for_model_A])
+                            
+                            features_for_model_call = FINANCIAL_COLS # Model A always uses financial features
+                            input_df_for_prediction = input_df_for_prediction[features_for_model_call] # Ensure correct order
 
-                                with cols[j]:
-                                    st.markdown(f"**{model_name_to_run}**")
-                                    with st.spinner(f"Predicting..."):
-                                        predicted_rating, probabilities = _predict_single_model(model, scaler, input_df_for_prediction, features_for_model_call, label_encoder)
+                            with cols[j]:
+                                st.markdown(f"**{model_name_to_run}**") # Use markdown for smaller title in column
+                                with st.spinner(f"Predicting..."):
+                                    predicted_rating, probabilities = _predict_single_model(model, scaler, input_df_for_prediction, features_for_model_call, label_encoder)
 
-                                        if predicted_rating != "Prediction failed.":
-                                            st.success(f"Rating: **{predicted_rating}**")
-                                            with st.expander(f"What is '{predicted_rating}'?"):
-                                                st.write(f"**{predicted_rating}:** {CREDIT_RATING_DEFINITIONS.get(predicted_rating, 'Definition not available.')}")
+                                    if predicted_rating != "Prediction failed.":
+                                        st.success(f"Rating: **{predicted_rating}**")
+                                        with st.popover(f"What is '{predicted_rating}'?"):
+                                            st.write(f"**{predicted_rating}:** {CREDIT_RATING_DEFINITIONS.get(predicted_rating, 'Definition not available.')}")
 
-                                            st.markdown("**Probabilities:**")
-                                            prob_df = pd.DataFrame(probabilities.items(), columns=['Rating', 'Probability'])
-                                            prob_df['Probability'] = prob_df['Probability'].astype(float)
-                                            prob_df = prob_df.sort_values(by='Probability', ascending=False)
-                                            prob_df['Probability'] = prob_df['Probability'].apply(lambda x: f"{x:.2%}")
-                                            st.dataframe(prob_df, hide_index=True, use_container_width=True)
+                                        st.markdown("**Probabilities:**")
+                                        prob_df = pd.DataFrame(probabilities.items(), columns=['Rating', 'Probability'])
+                                        prob_df['Probability'] = prob_df['Probability'].astype(float)
+                                        prob_df = prob_df.sort_values(by='Probability', ascending=False)
+                                        prob_df['Probability'] = prob_df['Probability'].apply(lambda x: f"{x:.2%}")
+                                        st.dataframe(prob_df, hide_index=True, use_container_width=True)
 
-                                            st.markdown("**Feature Importance:**")
-                                            plot_feature_contributions(model, features_for_model_call, model_name_to_run)
-                                        else:
-                                            st.error(f"Prediction failed.")
-                st.markdown("---")
+                                        st.markdown("**Feature Importance:**")
+                                        plot_feature_contributions(
+                                            model,
+                                            features_for_model_call, # Pass the correct features
+                                            model_name_to_run
+                                        )
+                                    else:
+                                        st.error(f"Prediction failed.")
+            st.markdown("---") # Separator after Model A group
 
-    st.markdown('</div>', unsafe_allow_html=True)
+        # --- Display All Model B (Financial + Sentiment) ---
+        # This block should only run if "All Model B" or "All Models (A & B)" is selected
+        if model_B_names and (selected_model_name == "All Model B (Financial + Sentiment)" or selected_model_name == "All Models (A & B)"):
+            st.subheader("All Model B (Financial + Sentiment) Predictions:")
+            with st.container(): # Use a container for visual separation
+                for i in range(0, len(model_B_names), cols_per_row):
+                    cols = st.columns(cols_per_row)
+                    for j in range(cols_per_row):
+                        if i + j < len(model_B_names):
+                            model_name_to_run = model_B_names[i + j]
+                            model = models[model_name_to_run]
+                            scaler = scalers[model_name_to_run]
+
+                            # Ensure overall_sentiment_result is a dictionary (it should be due to initialization)
+                            # Use .get() for safe access in case a key is missing in the dict
+                            sentiment_features_for_model = {col: overall_sentiment_result.get(col, 0.0) for col in SENTIMENT_COLS}
+                            all_inputs = {**st.session_state.financial_inputs, **sentiment_features_for_model}
+                            input_df_for_prediction = pd.DataFrame([all_inputs])
+                            
+                            features_for_model_call = ALL_COLS # Model B always uses all features
+                            input_df_for_prediction = input_df_for_prediction[features_for_model_call]
+
+                            with cols[j]:
+                                st.markdown(f"**{model_name_to_run}**") # Use markdown for smaller title in column
+                                with st.spinner(f"Predicting..."):
+                                    predicted_rating, probabilities = _predict_single_model(model, scaler, input_df_for_prediction, features_for_model_call, label_encoder)
+
+                                    if predicted_rating != "Prediction failed.":
+                                        st.success(f"Rating: **{predicted_rating}**")
+                                        with st.popover(f"What is '{predicted_rating}'?"):
+                                            st.write(f"**{predicted_rating}:** {CREDIT_RATING_DEFINITIONS.get(predicted_rating, 'Definition not available.')}")
+
+                                        st.markdown("**Probabilities:**")
+                                        prob_df = pd.DataFrame(probabilities.items(), columns=['Rating', 'Probability'])
+                                        prob_df['Probability'] = prob_df['Probability'].astype(float)
+                                        prob_df = prob_df.sort_values(by='Probability', ascending=False)
+                                        prob_df['Probability'] = prob_df['Probability'].apply(lambda x: f"{x:.2%}")
+                                        st.dataframe(prob_df, hide_index=True, use_container_width=True)
+
+                                        st.markdown("**Feature Importance:**")
+                                        plot_feature_contributions(
+                                            model,
+                                            features_for_model_call, # Pass the correct features
+                                            model_name_to_run
+                                        )
+                                    else:
+                                        st.error(f"Prediction failed.")
+
+
+# --- Reset Button (placed at the bottom for accessibility) ---
+st.markdown("---")
+st.button("Reset All Inputs", on_click=reset_inputs)
+
+st.markdown("---")
+st.info("Developed with Streamlit by your AI assistant.")
 
 
 
