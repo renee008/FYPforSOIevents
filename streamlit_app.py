@@ -19,7 +19,7 @@ import fitz  # PyMuPDF
 import io
 from boilerpy3.extractors import ArticleExtractor # Import boilerpy3
 
-# --- Custom CSS for a more modern and cohesive look ---
+# --- Custom CSS for a modern, cohesive, and aesthetically pleasing design ---
 st.markdown(
     """
     <style>
@@ -33,6 +33,7 @@ st.markdown(
     .main .block-container {
         padding-top: 2rem;
         padding-bottom: 2rem;
+        max-width: 1200px; /* Constrain width for a more focused layout */
     }
     
     /* --- Header Styling --- */
@@ -46,11 +47,13 @@ st.markdown(
         font-weight: 600;
         color: #34495e; /* Slightly lighter dark blue/gray */
     }
-    .st-emotion-cache-1833z0x { /* Streamlit's header container */
-        background-color: #ecf0f1;
-        padding: 1rem;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    
+    /* --- Streamlit's Main Container with a card-like effect --- */
+    .st-emotion-cache-1833z0x { /* The main app container class */
+        background-color: #f0f2f6; /* Light gray background */
+        border-radius: 16px;
+        box-shadow: 0 8px 30px rgba(0,0,0,0.1);
+        padding: 3rem;
         margin-bottom: 2rem;
     }
     
@@ -62,16 +65,12 @@ st.markdown(
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         transition: all 0.2s ease-in-out;
         border: none;
+        background-color: #3498db; /* Blue */
+        color: white;
     }
     .stButton>button:hover {
         transform: translateY(-2px);
         box-shadow: 0 6px 12px rgba(0,0,0,0.2);
-    }
-    
-    /* --- Primary Button Styling --- */
-    .st-emotion-cache-nahz7x .st-emotion-cache-nahz7x { /* Target primary button specifically */
-        background-color: #3498db; /* Blue */
-        color: white;
     }
     
     /* --- Text Input & Text Area Styling --- */
@@ -103,12 +102,13 @@ st.markdown(
         padding: 0.5rem;
     }
     .stTabs [data-baseweb="tab-list"] button {
-        background-color: #f8f9fa;
+        background-color: transparent;
         border-radius: 8px;
         transition: background-color 0.2s;
     }
     .stTabs [data-baseweb="tab-list"] button[aria-selected="true"] {
         background-color: white;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     }
     .stTabs [data-baseweb="tab-panel"] {
         padding-top: 1.5rem;
@@ -126,7 +126,7 @@ st.markdown(
         box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
     .streamlit-expanderHeader:hover {
-        background-color: #e0e6e8;
+        background-color: #dce1e7;
     }
 
     /* --- Metric Styling --- */
@@ -719,6 +719,7 @@ st.button("Reset All Inputs", on_click=reset_inputs)
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant.")
+
 
 
 
