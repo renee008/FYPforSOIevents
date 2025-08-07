@@ -19,7 +19,7 @@ import fitz  # PyMuPDF
 import io
 from boilerpy3.extractors import ArticleExtractor # Import boilerpy3
 
-# --- Custom CSS for a modern, cohesive, and aesthetically pleasing design ---
+# --- Custom CSS for Styling ---
 st.markdown(
     """
     <style>
@@ -29,143 +29,79 @@ st.markdown(
         font-family: 'Inter', sans-serif;
     }
     
-    /* --- Main App Container --- */
-    .main .block-container {
-        padding-top: 2rem;
-        padding-bottom: 2rem;
-        max-width: 1200px; /* Constrain width for a more focused layout */
+    /* Main Streamlit container with a deep blue background */
+    .st-emotion-cache-1833z0x { 
+        background-color: #0d1a2d;
+        color: #ecf0f1;
     }
     
-    /* --- Header Styling --- */
-    h1 {
-        font-size: 2.5rem;
-        font-weight: 700;
-        color: #2c3e50; /* Dark blue/gray */
-    }
-    h2 {
-        font-size: 1.75rem;
-        font-weight: 600;
-        color: #34495e; /* Slightly lighter dark blue/gray */
+    /* Text inputs and textareas */
+    .stTextInput>div>div>input, .stTextArea>div>div>textarea {
+        background-color: #1e2a3c;
+        color: #ecf0f1;
+        border: 1px solid #34495e;
+        border-radius: 8px;
     }
     
-    /* --- Streamlit's Main Container with a card-like effect --- */
-    .st-emotion-cache-1833z0x { /* The main app container class */
-        background-color: #f0f2f6; /* Light gray background */
-        border-radius: 16px;
-        box-shadow: 0 8px 30px rgba(0,0,0,0.1);
-        padding: 3rem;
-        margin-bottom: 2rem;
-    }
-    
-    /* --- Button Styling --- */
+    /* Buttons */
     .stButton>button {
         border-radius: 12px;
         padding: 10px 20px;
         font-weight: 600;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
         transition: all 0.2s ease-in-out;
-        border: none;
-        background-color: #3498db; /* Blue */
+        background-color: #3498db;
         color: white;
     }
-    .stButton>button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 12px rgba(0,0,0,0.2);
-    }
-    
-    /* --- Text Input & Text Area Styling --- */
-    .stTextInput>div>div>input, .stTextArea>div>div>textarea {
-        border-radius: 8px;
-        padding: 8px 12px;
-        border: 1px solid #bdc3c7;
-        box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
-        transition: border-color 0.2s ease-in-out;
-    }
-    .stTextInput>div>div>input:focus, .stTextArea>div>div>textarea:focus {
-        border-color: #3498db;
-        box-shadow: 0 0 0 0.2rem rgba(52, 152, 219, 0.25);
-    }
-    
-    /* --- Tabs Container Styling --- */
+
+    /* Tabs styling */
     .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p {
         font-size: 1.2rem;
         font-weight: 600;
-        color: #7f8c8d; /* Gray */
+        color: #95a5a6;
     }
     .stTabs [data-baseweb="tab-list"] button[aria-selected="true"] [data-testid="stMarkdownContainer"] p {
-        color: #3498db; /* Blue */
+        color: #3498db;
     }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 1rem;
-        background-color: #ecf0f1;
-        border-radius: 12px;
-        padding: 0.5rem;
+
+    /* Info boxes */
+    .st-emotion-cache-1629p8f { 
+        background-color: #1e2a3c;
+        border-left: 5px solid #3498db;
+        color: #ecf0f1;
     }
-    .stTabs [data-baseweb="tab-list"] button {
-        background-color: transparent;
+
+    /* Metric boxes */
+    [data-testid="stMetric"] {
+        background-color: #1e2a3c;
+        padding: 1rem;
         border-radius: 8px;
-        transition: background-color 0.2s;
     }
-    .stTabs [data-baseweb="tab-list"] button[aria-selected="true"] {
-        background-color: white;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    }
-    .stTabs [data-baseweb="tab-panel"] {
-        padding-top: 1.5rem;
-    }
-
-    /* --- Expander Styling --- */
-    .streamlit-expanderHeader {
-        background-color: #ecf0f1;
-        border-radius: 12px;
-        padding: 0.75rem 1rem;
-        font-weight: 600;
-        color: #2c3e50;
-        transition: background-color 0.2s;
-        border: none;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-    .streamlit-expanderHeader:hover {
-        background-color: #dce1e7;
-    }
-
-    /* --- Metric Styling --- */
     [data-testid="stMetricValue"] {
-        font-size: 3rem;
-        font-weight: 700;
-        color: #27ae60; /* Green for success */
+        color: #2ecc71; /* A nice green for positive metrics */
     }
     [data-testid="stMetricLabel"] {
-        color: #7f8c8d;
-    }
-    
-    /* --- Info, Warning, Error boxes --- */
-    .st-emotion-cache-1629p8f { /* Info */
-        border-left: 5px solid #3498db;
-        border-radius: 8px;
-    }
-    .st-emotion-cache-14u4v27 { /* Warning */
-        border-left: 5px solid #f1c40f;
-        border-radius: 8px;
-    }
-    .st-emotion-cache-14n91p4 { /* Error */
-        border-left: 5px solid #e74c3c;
-        border-radius: 8px;
+        color: #95a5a6;
     }
 
-    /* --- Hide number input arrows --- */
-    input[type=number]::-webkit-inner-spin-button,
-    input[type=number]::-webkit-outer-spin-button {
-        -webkit-appearance: none;
-        margin: 0;
+    /* Expander styling */
+    .streamlit-expanderHeader {
+        background-color: #1e2a3c;
+        border-radius: 8px;
+        color: #ecf0f1;
     }
-    input[type=number] {
-        -moz-appearance: textfield; /* Firefox */
+
+    /* Charts and plots */
+    .st-emotion-cache-1c2qf4b {
+        background-color: #1e2a3c;
+        border-radius: 8px;
     }
+    
     </style>
     """,
     unsafe_allow_html=True
 )
+
 
 # --- NLTK Data Download (Crucial for VADER) ---
 @st.cache_resource # Cache the download to run only once
@@ -719,6 +655,7 @@ st.button("Reset All Inputs", on_click=reset_inputs)
 
 st.markdown("---")
 st.info("Developed with Streamlit by your AI assistant.")
+
 
 
 
